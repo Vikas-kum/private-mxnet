@@ -73,6 +73,7 @@ class Module(BaseModule):
                  logger=logging, context=ctx.cpu(), work_load_list=None,
                  fixed_param_names=None, state_names=None, group2ctxs=None,
                  compression_params=None):
+        logging.basicConfig(level=logging.INFO)
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):

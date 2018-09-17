@@ -1896,6 +1896,9 @@ MXNET_DLL int MXInitPSEnv(mx_uint num_vars,
                           const char **keys,
                           const char **vals);
 
+MXNET_DLL int MXUpdatePSEnv(const char *key,
+                            const char *val);
+
 
 /*!
  * \brief Create a kvstore

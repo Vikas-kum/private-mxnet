@@ -835,7 +835,7 @@ class FeedForward(BASE_ESTIMATOR):
         - 'dist_sync', multiple machines communicating via BSP.
         - 'dist_async', multiple machines with asynchronous communication.
         """
-
+        logging.info("VIKAS:JHAPA")
         data = self._init_iter(X, y, is_train=True)
         eval_data = self._init_eval_iter(eval_data)
 

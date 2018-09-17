@@ -32,6 +32,7 @@ from ..model import BatchEndParam
 from ..initializer import Uniform
 from ..io import DataDesc, DataIter, DataBatch
 from ..base import _as_list
+from .. import kvstore as kvs
 
 
 def _check_input_names(symbol, names, typename, throw):
@@ -493,7 +494,10 @@ class BaseModule(object):
         ...     eval_metric='acc', num_epoch=10, begin_epoch=3)
         """
         assert num_epoch is not None, 'please specify number of epochs'
-
+        while True:
+            time.sleep(5)
+            print("Sleeping........")
+        self.logger.info("Vikas JHAparBase")
         self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label,
                   for_training=True, force_rebind=force_rebind)
         if monitor is not None:
@@ -515,6 +519,10 @@ class BaseModule(object):
             tic = time.time()
             eval_metric.reset()
             nbatch = 0
+            self.logger.info("Vikas JHAparBase updating env variable")
+          #  kvs.updatePSEnvVar("DMLC_NUM_WORKER","3")
+            self.logger.info("Vikas JHAparBase updated env variable")
+
             data_iter = iter(train_data)
             end_of_batch = False
             next_data_batch = next(data_iter)

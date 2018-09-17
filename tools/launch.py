@@ -123,6 +123,6 @@ def signal_handler(signal, frame):
 
 if __name__ == '__main__':
     fmt = '%(asctime)s %(levelname)s %(message)s'
-    logging.basicConfig(format=fmt, level=logging.INFO)
+    logging.basicConfig(filename='/tmp/dt_log.log',format=fmt, level=logging.INFO)
     signal.signal(signal.SIGINT, signal_handler)
     main()

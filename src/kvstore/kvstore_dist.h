@@ -79,8 +79,12 @@ class KVStoreDist : public KVStoreLocal {
     CHECK(updater) << "invalid updater";
     if (IsServerNode()) {
       CHECK_NOTNULL(server_)->set_updater(updater);
+     //     LOG(INFO) << getpid() << "Setting updater in SERVER HAHAHAH";
+
     } else {
       updater_ = updater;
+    //  LOG(INFO) << getpid() << "Setting updater in NON SERVER HAHAHAH";
+
     }
   }
 
@@ -88,6 +92,7 @@ class KVStoreDist : public KVStoreLocal {
                               & kwargs) override {
     KVStoreLocal::SetGradientCompression(kwargs);
     if (get_rank() == 0) {
+    //  LOG(INFO)<< getpid() << "  Setting Gradient compression to servers";
       SendCommandToServers(static_cast<int>(CommandType::kSetGradientCompression),
                            gradient_compression_->EncodeParams());
     }
@@ -96,6 +101,8 @@ class KVStoreDist : public KVStoreLocal {
   void SetServerProfilerCommand(const KVStoreServerProfilerCommand type,
                                 const std::string& params) override {
     if (get_rank() == 0) {
+  //   LOG(INFO)<< getpid() << "  Setting Server profiler command  to servers";
+
       SendCommandToServers(static_cast<int>(CommandType::kSetProfilerParams),
                            params + std::to_string(static_cast<int>(type)));
     }

@@ -1051,6 +1051,14 @@ int MXInitPSEnv(mx_uint num_vars,
   API_END();
 }
 
+int MXUpdatePSEnv(const char* env_var, const char* value) {
+  API_BEGIN();
+  std::string key(env_var);
+  std::string val(value);
+  KVStore::updatePSEnvVar(key, val);
+  API_END();
+}
+
 int MXKVStoreIsWorkerNode(int *ret) {
   API_BEGIN();
   *ret = KVStore::IsWorkerNode();
