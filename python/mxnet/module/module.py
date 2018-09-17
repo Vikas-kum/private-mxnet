@@ -29,7 +29,7 @@ from .. import optimizer as opt
 from .. import ndarray as nd
 
 from .executor_group import DataParallelExecutorGroup
-from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
+from ..model import _create_kvstore, _initialize_kvstore, _initialize_aux_params_kvstore, _store_aux_params_on_kvstore, _pull_from_kvstore, _update_params, _update_params_on_kvstore
 from ..model import load_checkpoint
 from ..initializer import Uniform, InitDesc
 from ..io import DataDesc
@@ -73,6 +73,7 @@ class Module(BaseModule):
                  logger=logging, context=ctx.cpu(), work_load_list=None,
                  fixed_param_names=None, state_names=None, group2ctxs=None,
                  compression_params=None):
+        logging.basicConfig(level=logging.INFO)
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -472,7 +473,7 @@ class Module(BaseModule):
         self._exec_group.reshape(self._data_shapes, self._label_shapes)
 
     def init_optimizer(self, kvstore='local', optimizer='sgd',
-                       optimizer_params=(('learning_rate', 0.01),), force_init=False):
+                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False):
         """Installs and initializes optimizers.
 
         Parameters
@@ -539,12 +540,28 @@ class Module(BaseModule):
                 kvstore.set_gradient_compression(self._compression_params)
             if update_on_kvstore:
                 kvstore.set_optimizer(self._optimizer)
-            # copy initialized local parameters to kvstore
-            _initialize_kvstore(kvstore=kvstore,
+                # copy initialized local parameters to kvstore
+                _initialize_kvstore(kvstore=kvstore,
                                 param_arrays=self._exec_group.param_arrays,
                                 arg_params=self._arg_params,
                                 param_names=self._param_names,
                                 update_on_kvstore=update_on_kvstore)
+                _initialize_aux_params_kvstore(kvstore=kvstore,
+                                aux_arrays=self._exec_group.aux_arrays,
+                                aux_params=self._aux_params,
+                                aux_names=self._aux_names,
+                                update_on_kvstore=update_on_kvstore)
+        #if initialize_from_kvstore is True:
+            #print("VIK pulling from KVSTORE")
+            #_pull_from_kvstore(kvstore=kvstore,
+            #                   param_arrays=self._exec_group.param_arrays,
+            #                   aux_arrays=self._exec_group.aux_arrays,
+        #                   param_names=self._param_names,
+        #                   aux_names=self._aux_names)
+
+        print("VIK param_names: {}".format(self._param_names))
+        print("VIK arg_params: {}", self._arg_params)
+        print("VIK aux_params:{}", self._aux_params)
 
         if not update_on_kvstore:
             self._updater = opt.get_updater(optimizer)
@@ -662,6 +679,7 @@ class Module(BaseModule):
             _update_params_on_kvstore(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
                                       self._kvstore, self._exec_group.param_names)
+
         else:
             _update_params(self._exec_group.param_arrays,
                            self._exec_group.grad_arrays,
@@ -669,6 +687,21 @@ class Module(BaseModule):
                            num_device=len(self._context),
                            kvstore=self._kvstore,
                            param_names=self._exec_group.param_names)
+
+    def store_aux_params(self):
+        """Stores aux parameters on kvstore.
+
+
+        See Also
+        ----------
+        :meth:`BaseModule.update`.
+        """
+        assert self.binded and self.params_initialized and self.optimizer_initialized
+
+        self._params_dirty = True
+        if self._update_on_kvstore:
+            _store_aux_params_on_kvstore(self._exec_group.aux_arrays,
+                                         self._kvstore, self._exec_group.aux_names)
 
     def get_outputs(self, merge_multi_context=True):
         """Gets outputs of the previous forward computation.

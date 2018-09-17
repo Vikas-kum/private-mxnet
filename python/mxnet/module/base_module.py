@@ -33,6 +33,7 @@ from ..model import BatchEndParam
 from ..initializer import Uniform
 from ..io import DataDesc, DataIter, DataBatch
 from ..base import _as_list
+from .. import kvstore as kvs
 
 
 def _check_input_names(symbol, names, typename, throw):
@@ -410,7 +411,7 @@ class BaseModule(object):
     def fit(self, train_data, eval_data=None, eval_metric='acc',
             epoch_end_callback=None, batch_end_callback=None, kvstore='local',
             optimizer='sgd', optimizer_params=(('learning_rate', 0.01),),
-            eval_end_callback=None,
+            eval_end_callback=None, epoch_begin_callback=None,
             eval_batch_end_callback=None, initializer=Uniform(0.01),
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
@@ -494,22 +495,32 @@ class BaseModule(object):
         ...     eval_metric='acc', num_epoch=10, begin_epoch=3)
         """
         assert num_epoch is not None, 'please specify number of epochs'
-
+        self.logger.info("Vikas JHAparBase")
         self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label,
                   for_training=True, force_rebind=force_rebind)
         if monitor is not None:
             self.install_monitor(monitor)
+        import os
+        is_new_worker = os.getenv("NEW_WORKER", "0") == "1"
+        is_elastic_training_enabled = os.getenv("ELASTIC_TRAINING_ENABLED", "0") == "1"
+        #should_initialize_from_kvstore = is_new_worker and is_elastic_training_enabled
+
+        self.logger.info("Vikas TATATA:elastic training enabled/ne_worker {}/{}".format(is_elastic_training_enabled, is_new_worker))
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
                          allow_missing=allow_missing, force_init=force_init)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
-                            optimizer_params=optimizer_params)
-
+                            optimizer_params=optimizer_params, initialize_from_kvstore=is_new_worker)
+        
+        self.logger.info("new worker:%s", is_new_worker)
+        self.logger.info("ARG PARAMS: %s", arg_params)
+        self.logger.info("aux PARAMS: %s", aux_params)
+        self.logger.info("optimizer_params PARAMS: %s", optimizer_params)
         if validation_metric is None:
             validation_metric = eval_metric
         if not isinstance(eval_metric, metric.EvalMetric):
             eval_metric = metric.create(eval_metric)
         epoch_eval_metric = copy.deepcopy(eval_metric)
-
+        
         ################################################################################
         # training loop
         ################################################################################
@@ -518,6 +529,21 @@ class BaseModule(object):
             eval_metric.reset()
             epoch_eval_metric.reset()
             nbatch = 0
+            self.logger.info("Vikas JHAparBase updating env variable")
+            if epoch_begin_callback is not None:
+                for callback in _as_list(epoch_begin_callback):
+                    callback(epoch, self.symbol, arg_params, aux_params)
+            self.logger.info("Vikas sleeping")
+            time.sleep(15)
+            if is_elastic_training_enabled == True and is_new_worker == False: 
+                kvstore._membership_change_barrier({"EPOCH_BEGIN":str(begin_epoch)}) # {"EPOCH_BEGIN":str(begin_epoch)}
+                self.logger.info("Called MCB")
+            is_new_worker = False
+          # update num_parts anf part index 
+            self.logger.info("Vikas JHAparBase updated env variable")
+            
+           ### time.sleep(1500)
+
             data_iter = iter(train_data)
             end_of_batch = False
             next_data_batch = next(data_iter)
@@ -969,6 +995,31 @@ class BaseModule(object):
             ...]]
         """
         raise NotImplementedError()
+    
+    def update(self):
+        """Updates parameters according to the installed optimizer and the gradients computed
+        in the previous forward-backward batch.
+
+        When KVStore is used to update parameters for multi-device or multi-machine training,
+        a copy of the parameters are stored in KVStore. Note that for `row_sparse` parameters,
+        this function does update the copy of parameters in KVStore, but doesn't broadcast the
+        updated parameters to all devices / machines. Please call `prepare` to broadcast
+        `row_sparse` parameters with the next batch of data.
+
+        Examples
+        --------
+        >>> # An example of updating module parameters.
+        >>> mod.init_optimizer(kvstore='local', optimizer='sgd',
+        ...     optimizer_params=(('learning_rate', 0.01), ))
+        >>> mod.backward()
+        >>> mod.update()
+        >>> print mod.get_params()[0]['fc3_weight'].asnumpy()
+        [[  5.86930104e-03   5.28078526e-03  -8.88729654e-03  -1.08308345e-03
+            6.13054074e-03   4.27560415e-03   1.53817423e-03   4.62131854e-03
+            4.69872449e-03  -2.42400169e-03   9.94111411e-04   1.12386420e-03
+            ...]]
+        """
+        raise NotImplementedError()
 
     def update_metric(self, eval_metric, labels, pre_sliced=False):
         """Evaluates and accumulates evaluation metric on outputs of the last forward
@@ -1036,7 +1087,7 @@ class BaseModule(object):
         raise NotImplementedError()
 
     def init_optimizer(self, kvstore='local', optimizer='sgd',
-                       optimizer_params=(('learning_rate', 0.01),), force_init=False):
+                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False):
         """Installs and initializes optimizers, as well as initialize kvstore for
            distributed training
 

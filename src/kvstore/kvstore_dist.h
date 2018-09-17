@@ -49,7 +49,9 @@ class KVStoreDist : public KVStoreLocal {
       int new_customer_id = GetNewCustomerId();
       ps_worker_ = new ps::KVWorker<char>(0, new_customer_id);
       ps::StartAsync(new_customer_id, "mxnet\0");
-      if (!ps::Postoffice::Get()->is_recovery()) {
+      LOG(INFO) << "Pid:" << getpid() << " Calling barrier HAHAHA:" << ps::Postoffice::Get()->is_new_worker();
+
+      if (!ps::Postoffice::Get()->is_recovery() && !ps::Postoffice::Get()->is_new_worker()) {
         ps::Postoffice::Get()->Barrier(
           new_customer_id,
           ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler);
@@ -79,8 +81,12 @@ class KVStoreDist : public KVStoreLocal {
     CHECK(updater) << "invalid updater";
     if (IsServerNode()) {
       CHECK_NOTNULL(server_)->set_updater(updater);
+     //     LOG(INFO) << getpid() << "Setting updater in SERVER HAHAHAH";
+
     } else {
       updater_ = updater;
+    //  LOG(INFO) << getpid() << "Setting updater in NON SERVER HAHAHAH";
+
     }
   }
 
@@ -88,6 +94,7 @@ class KVStoreDist : public KVStoreLocal {
                               & kwargs) override {
     KVStoreLocal::SetGradientCompression(kwargs);
     if (get_rank() == 0) {
+    //  LOG(INFO)<< getpid() << "  Setting Gradient compression to servers";
       SendCommandToServers(static_cast<int>(CommandType::kSetGradientCompression),
                            gradient_compression_->EncodeParams());
     }
@@ -96,6 +103,8 @@ class KVStoreDist : public KVStoreLocal {
   void SetServerProfilerCommand(const KVStoreServerProfilerCommand type,
                                 const std::string& params) override {
     if (get_rank() == 0) {
+  //   LOG(INFO)<< getpid() << "  Setting Server profiler command  to servers";
+
       SendCommandToServers(static_cast<int>(CommandType::kSetProfilerParams),
                            params + std::to_string(static_cast<int>(type)));
     }
@@ -103,7 +112,15 @@ class KVStoreDist : public KVStoreLocal {
 
 
   void Barrier() override {
+    LOG(INFO) << "Pid:" << getpid() << " Calling barrier";
     ps::Postoffice::Get()->Barrier(ps_worker_->get_customer()->customer_id(), ps::kWorkerGroup);
+  }
+  
+  void MembershipChangeBarrier(const std::vector<std::pair<std::string, std::string> >
+                              & data) override {
+    LOG(INFO) << "Pid:" << getpid() << " Calling MC barrier";
+
+    ps::Postoffice::Get()->Barrier(ps_worker_->get_customer()->customer_id(), ps::kWorkerGroup, true, data);
   }
 
   void SendCommandToServers(int cmd_id,
@@ -203,7 +220,7 @@ class KVStoreDist : public KVStoreLocal {
     } else {
       // do nothing
     }
-    if (!ps::Postoffice::Get()->is_recovery()) {
+    if (!ps::Postoffice::Get()->is_recovery() && !ps::Postoffice::Get()->is_new_worker()) {
       Barrier();
     }
   }

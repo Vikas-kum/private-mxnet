@@ -38,6 +38,7 @@
 #endif  // MXNET_USE_DIST_KVSTORE
 
 namespace mxnet {
+const int MAX_ALLOWED_KEY_FOR_UPDATE = 10000000;
 
 /*!
  * \brief enum to denote types of commands kvstore sends to server regarding profiler
@@ -73,6 +74,10 @@ class KVStore {
    */
   static KVStore *Create(const char *type = "local");
 
+  static const int GetMaxAllowedKeyForUpdate() {
+    return MAX_ALLOWED_KEY_FOR_UPDATE;
+  }
+
   /**
    * \brief return the type
    */
@@ -103,14 +108,14 @@ class KVStore {
    * \param values a list of values
    */
   virtual void Init(const std::vector<int>& keys,
-                    const std::vector<NDArray>& values) = 0;
+                    const std::vector<NDArray>& values, bool exclude_update=false) = 0;
   /*!
    * \brief Initialize a list of key-value pair to the store.
    * \param keys a list of unique keys in string format
    * \param values a list of values
    */
   virtual void Init(const std::vector<std::string>& str_keys,
-                    const std::vector<NDArray>& values) = 0;
+                    const std::vector<NDArray>& values, bool exclude_update=false) = 0;
   /*!
    * \brief push a list of key-value pairs into the store
    *
@@ -324,7 +329,7 @@ class KVStore {
     return false;
 #endif  // MXNET_USE_DIST_KVSTORE
   }
-
+  
   /*!
    * \return The rank of this node in its group, which is in [0,
    * GroupSize).
@@ -409,6 +414,8 @@ class KVStore {
    * \param controller the user-defined server controller
    */
   virtual void RunServer(const Controller& controller) { }
+
+  virtual void MembershipChangeBarrier(const std::vector<std::pair<std::string, std::string> >& data) {}
 
  protected:
   /**

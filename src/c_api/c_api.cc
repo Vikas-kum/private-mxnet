@@ -831,7 +831,8 @@ int MXKVStoreFree(KVStoreHandle handle) {
 int MXKVStoreInit(KVStoreHandle handle,
                   mx_uint num,
                   const int* keys,
-                  NDArrayHandle* vals) {
+                  NDArrayHandle* vals,
+                  bool exclude_update) {
   API_BEGIN();
   std::vector<int> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -839,14 +840,15 @@ int MXKVStoreInit(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = *static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Init(v_keys, v_vals);
+  static_cast<KVStore*>(handle)->Init(v_keys, v_vals, exclude_update);
   API_END();
 }
 
 int MXKVStoreInitEx(KVStoreHandle handle,
                   mx_uint num,
                   const char** keys,
-                  NDArrayHandle* vals) {
+                  NDArrayHandle* vals,
+                  bool exclude_update) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -854,7 +856,7 @@ int MXKVStoreInitEx(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = *static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Init(v_keys, v_vals);
+  static_cast<KVStore*>(handle)->Init(v_keys, v_vals, exclude_update);
   API_END();
 }
 
@@ -1054,6 +1056,19 @@ int MXKVStoreGetGroupSize(KVStoreHandle handle, int *size) {
 int MXKVStoreBarrier(KVStoreHandle handle) {
   API_BEGIN();
   static_cast<KVStore*>(handle)->Barrier();
+  API_END();
+}
+
+int MXKVStoreMembershipChangeBarrier(KVStoreHandle handle, int num_params, const char** keys, const char** vals) {
+  API_BEGIN();
+  std::vector<std::pair<std::string, std::string> > params;
+  for (mx_uint i = 0; i < num_params; ++i) {
+    std::pair<std::string, std::string> p;
+    p.first = keys[i];
+    p.second = vals[i];
+    params.push_back(p);
+  }
+  static_cast<KVStore*>(handle)->MembershipChangeBarrier(params);
   API_END();
 }
 

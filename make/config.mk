@@ -224,3 +224,5 @@ USE_CPP_PACKAGE = 0
 # git@github.com:dato-code/SFrame.git
 # SFRAME_PATH = $(HOME)/SFrame
 # MXNET_PLUGINS += plugin/sframe/plugin.mk
+USE_NCCL=1
+USE_NCCP_PATH=path-to-nccl-installation-folder

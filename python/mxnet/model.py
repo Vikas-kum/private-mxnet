@@ -122,6 +122,24 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names, update_o
         if update_on_kvstore:
             kvstore.pull(name, param_on_devs, priority=-idx)
 
+def _initialize_aux_params_kvstore(kvstore, aux_arrays, aux_params, aux_names, update_on_kvstore):
+    """Initialize aux_params on kvstore"""
+    for idx, param_on_devs in enumerate(aux_arrays):
+        name = aux_names[idx]
+        # 3rd parameter is True, telling exclude updates on these parameters
+        kvstore.init(name, aux_params[name], True)
+
+        if update_on_kvstore:
+            kvstore.pull(name, param_on_devs, priority=-idx)
+
+def _pull_from_kvstore(kvstore, param_arrays, aux_arrays, param_names, aux_names):
+    for idx, param_on_devs in enumerate(param_arrays):
+        name = param_names[idx]
+        kvstore.pull(name, param_on_devs, priority=-idx)
+    for idx, param_on_devs in enumerate(aux_arrays):
+        name = aux_names[idx]
+        kvstore.pull(name, param_on_devs, priority=-idx)
+
 def _update_params_on_kvstore_nccl(param_arrays, grad_arrays, kvstore, param_names):
     """Perform update of param_arrays from grad_arrays on NCCL kvstore."""
     valid_indices = [index for index, grad_list in
@@ -153,6 +171,13 @@ def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names):
         kvstore.push(name, grad_list, priority=-index)
         # pull back the weights
         kvstore.pull(name, arg_list, priority=-index)
+
+def _store_aux_params_on_kvstore(aux_arrays, kvstore, aux_names):
+    """Perform update of aux_arrays on kvstore."""
+    for index in enumerate(zip(aux_arrays)):
+        name = aux_names[index]
+        # push gradient, priority is negative index
+        kvstore.push(name, aux_arrays[index], priority=-index)
 
 def _update_params(param_arrays, grad_arrays, updater, num_device,
                    kvstore=None, param_names=None):
@@ -835,7 +860,7 @@ class FeedForward(BASE_ESTIMATOR):
         - 'dist_sync', multiple machines communicating via BSP.
         - 'dist_async', multiple machines with asynchronous communication.
         """
-
+        logging.info("VIKAS:JHAPA")
         data = self._init_iter(X, y, is_train=True)
         eval_data = self._init_eval_iter(eval_data)
 

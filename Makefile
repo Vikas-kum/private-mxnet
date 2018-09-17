@@ -417,7 +417,7 @@ endif
 # all dep
 LIB_DEP += $(DMLC_CORE)/libdmlc.a $(NNVM_PATH)/lib/libnnvm.a
 ALL_DEP = $(OBJ) $(EXTRA_OBJ) $(PLUGIN_OBJ) $(LIB_DEP)
-
+$(info ALL_DEP is $(ALL_DEP))
 ifeq ($(USE_CUDA), 1)
 	CFLAGS += -I$(ROOTDIR)/3rdparty/cub
 	ALL_DEP += $(CUOBJ) $(EXTRA_CUOBJ) $(PLUGIN_CUOBJ)
@@ -490,9 +490,11 @@ build/plugin/%.o: plugin/%.cc
 
 # NOTE: to statically link libmxnet.a we need the option
 # --Wl,--whole-archive -lmxnet --Wl,--no-whole-archive
+#$(info lkkk is $(ALLX_DEP))
+#lib/libmxnet.a: $(info dir is $@)
 lib/libmxnet.a: $(ALLX_DEP)
 	@mkdir -p $(@D)
-	ar crv $@ $(filter %.o, $?)
+	ar crv $@ $(filter %.o, $^)
 
 lib/libmxnet.so: $(ALLX_DEP)
 	@mkdir -p $(@D)

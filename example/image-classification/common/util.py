@@ -25,6 +25,7 @@ def download_file(url, local_fname=None, force_write=False):
     if local_fname is None:
         local_fname = url.split('/')[-1]
     if not force_write and os.path.exists(local_fname):
+        print("CHACHAHHAHAHAHAAHAHAHAH\nCHAHAHHAH:%s\n", local_fname)
         return local_fname
 
     dir_name = os.path.dirname(local_fname)
