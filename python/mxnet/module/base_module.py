@@ -24,6 +24,7 @@ import logging
 import warnings
 import copy
 import numpy as np
+import os
 
 from .. import metric
 from .. import ndarray
@@ -33,6 +34,7 @@ from ..model import BatchEndParam
 from ..initializer import Uniform
 from ..io import DataDesc, DataIter, DataBatch
 from ..base import _as_list
+from .. import kvstore as kvs
 
 
 def _check_input_names(symbol, names, typename, throw):
@@ -410,7 +412,7 @@ class BaseModule(object):
     def fit(self, train_data, eval_data=None, eval_metric='acc',
             epoch_end_callback=None, batch_end_callback=None, kvstore='local',
             optimizer='sgd', optimizer_params=(('learning_rate', 0.01),),
-            eval_end_callback=None,
+            eval_end_callback=None, epoch_begin_callback=None,
             eval_batch_end_callback=None, initializer=Uniform(0.01),
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
@@ -494,21 +496,33 @@ class BaseModule(object):
         ...     eval_metric='acc', num_epoch=10, begin_epoch=3)
         """
         assert num_epoch is not None, 'please specify number of epochs'
-
         self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label,
                   for_training=True, force_rebind=force_rebind)
         if monitor is not None:
             self.install_monitor(monitor)
+        is_new_worker = os.getenv("NEW_WORKER", "0") == "1"
+        begin_epoch_str = os.getenv("EPOCH_BEGIN", str(begin_epoch))
+        begin_epoch = int(begin_epoch_str)
+        is_elastic_training_enabled = os.getenv("ELASTIC_TRAINING_ENABLED", "0") == "1"
+
+        self.logger.info("elastic training enabled/new_worker {}/{}".format(is_elastic_training_enabled, is_new_worker))
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
                          allow_missing=allow_missing, force_init=force_init)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
-                            optimizer_params=optimizer_params)
+                            optimizer_params=optimizer_params, initialize_from_kvstore=is_new_worker,
+                            allow_missing=allow_missing, force_init=force_init)
 
         if validation_metric is None:
             validation_metric = eval_metric
         if not isinstance(eval_metric, metric.EvalMetric):
             eval_metric = metric.create(eval_metric)
         epoch_eval_metric = copy.deepcopy(eval_metric)
+
+        if is_new_worker == True:
+            dup_arg_params, dup_aux_params = self.get_params()
+            self.logger.info("New worker Pid:{} , new_arg_params :{}".format(os.getpid(), dup_arg_params))
+            self.logger.info("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_aux_params))
+
 
         ################################################################################
         # training loop
@@ -518,6 +532,23 @@ class BaseModule(object):
             eval_metric.reset()
             epoch_eval_metric.reset()
             nbatch = 0
+            prev_worker_count = kvstore.num_workers
+            self.logger.info("{} KVstore my_rank:{}".format(os.getpid(), kvstore.rank))
+            if epoch_begin_callback is not None:
+                for callback in _as_list(epoch_begin_callback):
+                    callback(epoch, self.symbol, arg_params, aux_params)
+            if is_elastic_training_enabled == True and is_new_worker == False: 
+                self.logger.info("Pid:{} Calling MembershipChangeBarrier".format(os.getpid()))
+                kvstore._membership_change_barrier({"EPOCH_BEGIN":str(epoch)})
+                self.logger.info("Pid:{} MembershipChangeBarrier finished.".format(os.getpid()))
+            is_new_worker = False
+            new_worker_count = kvstore.num_workers
+            
+            if prev_worker_count != new_worker_count:
+                logging.info("Resetting data iterator as worker count changed from {} to {}".format(prev_worker_count, new_worker_count))
+                train_data, eval_data = self.get_iterator(kvstore)
+            elif is_new_worker == True:
+                logging.info("This is new worker with pid:{}".format(os.getpid()))
             data_iter = iter(train_data)
             end_of_batch = False
             next_data_batch = next(data_iter)
@@ -569,6 +600,11 @@ class BaseModule(object):
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
             self.set_params(arg_params, aux_params)
+            self.logger.info("Pid:{} my_rank:{} arg_params:{}".format(os.getpid(), kvstore.rank, arg_params))
+            self.logger.info("Pid:{} my_rank:{} aux_params:{}".format(os.getpid(), kvstore.rank, aux_params))
+            if is_elastic_training_enabled:
+                self.logger.info('Storing aux params in KVStore')
+                self.store_aux_params()
 
             if epoch_end_callback is not None:
                 for callback in _as_list(epoch_end_callback):
@@ -576,6 +612,7 @@ class BaseModule(object):
 
             #----------------------------------------
             # evaluation on validation set
+            self.logger.info("Calling score")
             if eval_data:
                 res = self.score(eval_data, validation_metric,
                                  score_end_callback=eval_end_callback,
@@ -791,6 +828,9 @@ class BaseModule(object):
         """Installs monitor on all executors."""
         raise NotImplementedError()
 
+    def get_iterator(self, kv):
+        raise NotImplementedError()
+
     ################################################################################
     # Computations
     ################################################################################
@@ -945,7 +985,7 @@ class BaseModule(object):
         """
         raise NotImplementedError()
 
-    def update(self):
+    def update(self, update_aux_params=False):
         """Updates parameters according to the installed optimizer and the gradients computed
         in the previous forward-backward batch.
 
@@ -968,6 +1008,9 @@ class BaseModule(object):
             4.69872449e-03  -2.42400169e-03   9.94111411e-04   1.12386420e-03
             ...]]
         """
+        raise NotImplementedError()
+
+    def store_aux_params(self):
         raise NotImplementedError()
 
     def update_metric(self, eval_metric, labels, pre_sliced=False):
@@ -1036,7 +1079,8 @@ class BaseModule(object):
         raise NotImplementedError()
 
     def init_optimizer(self, kvstore='local', optimizer='sgd',
-                       optimizer_params=(('learning_rate', 0.01),), force_init=False):
+                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False,
+                       allow_missing=False):
         """Installs and initializes optimizers, as well as initialize kvstore for
            distributed training
 

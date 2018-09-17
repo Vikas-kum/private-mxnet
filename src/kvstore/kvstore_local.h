@@ -92,20 +92,25 @@ class KVStoreLocal : public KVStore {
   }
 
   void Init(const std::vector<int>& keys,
-            const std::vector<NDArray>& values) override {
+            const std::vector<NDArray>& values, bool exclude_update) override {
     SetKeyType(kIntKey);
     InitImpl(keys, values);
   }
 
   void Init(const std::vector<std::string>& str_keys,
-            const std::vector<NDArray>& values) override {
+            const std::vector<NDArray>& values, bool exclude_update) override {
     SetKeyType(kStringKey);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
       auto &str_key = str_keys[i];
       CHECK(str_key_dict_.find(str_key) == str_key_dict_.end())
             << "duplicate init of key " << str_key;
-      auto key = next_str_key_++;
+      int key;
+      if(exclude_update){
+        key = next_str_key_with_exclude_update_++;
+      } else {
+        key = next_str_key_++;
+      }
       str_key_dict_[str_key] = key;
       // record reverse mapping from int to string
       reverse_str_key_dict_[key] = str_key;
@@ -378,7 +383,7 @@ class KVStoreLocal : public KVStore {
     for (size_t i = 0; i < str_keys.size(); ++i) {
       auto &str_key = str_keys[i];
       CHECK(str_key_dict_.find(str_key) != str_key_dict_.end())
-            << "key " << str_key << " doesn't exist. Did you init?";
+            << "key " << str_key << " doesn't exist. Did you init?" << getpid();
       keys->at(i) = str_key_dict_[str_key];
     }
   }
@@ -450,6 +455,8 @@ class KVStoreLocal : public KVStore {
   std::unordered_map<int, std::string> reverse_str_key_dict_;
   /// the next available integer for string->int key mapping
   int next_str_key_ = 0;
+
+  int next_str_key_with_exclude_update_ = mxnet::MAX_ALLOWED_KEY_FOR_UPDATE + 1;
   /// whether printed warning due to mismatch stype in each key
   std::unordered_set<int> warnings_printed_;
   /// whether int or string is used for keys

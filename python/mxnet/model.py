@@ -113,14 +113,44 @@ def _create_kvstore(kvstore, num_device, arg_params):
 
     return (kv, update_on_kvstore)
 
-def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names, update_on_kvstore):
+def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names, update_on_kvstore, aux_arrays=None, aux_params=None, aux_names=None):
+    aux_arrays_size = 0
+    if aux_arrays is not None:
+        aux_arrays_size = len(aux_names)
     """Initialize kvstore"""
     for idx, param_on_devs in enumerate(param_arrays):
         name = param_names[idx]
         kvstore.init(name, arg_params[name])
+        if idx < aux_arrays_size:
+            aux_name = aux_names[idx]
+            # 3rd parameter is True, telling exclude updates on these parameters
+            kvstore.init(aux_name, aux_params[aux_name], True)
 
         if update_on_kvstore:
             kvstore.pull(name, param_on_devs, priority=-idx)
+            if idx < aux_arrays_size:
+                logging.info("Pulling aux_name:{}".format(aux_names[idx]))
+
+                kvstore.pull(aux_names[idx], aux_arrays[idx], priority=-idx)
+
+def _initialize_aux_params_kvstore(kvstore, aux_arrays, aux_params, aux_names, update_on_kvstore):
+    """Initialize aux_params on kvstore"""
+    for idx, param_on_devs in enumerate(aux_arrays):
+        name = aux_names[idx]
+        # 3rd parameter is True, telling exclude updates on these parameters
+        kvstore.init(name, aux_params[name], True)
+
+        if update_on_kvstore:
+            kvstore.pull(name, param_on_devs, priority=-idx)
+
+def _pull_from_kvstore(kvstore, param_arrays, aux_arrays, param_names, aux_names):
+    # params and aux should be interleaved
+    for idx, param_on_devs in enumerate(param_arrays):
+        name = param_names[idx]
+        kvstore.pull(name, param_on_devs, priority=-idx)
+    for idx, param_on_devs in enumerate(aux_arrays):
+        name = aux_names[idx]
+        kvstore.pull(name, param_on_devs, priority=-idx)
 
 def _update_params_on_kvstore_nccl(param_arrays, grad_arrays, kvstore, param_names):
     """Perform update of param_arrays from grad_arrays on NCCL kvstore."""
@@ -142,7 +172,19 @@ def _update_params_on_kvstore_nccl(param_arrays, grad_arrays, kvstore, param_nam
         kvstore.pull(valid_param_names[start:end], valid_param_arrays[start:end], priority=-start)
         start = end
 
-def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names):
+def _store_aux_params_on_kvstore(aux_arrays, kvstore, aux_names, aux_params, is_initialized):
+    for index, aux_val in enumerate(aux_arrays):
+        name = aux_names[index]
+        if(not is_initialized):
+            kvstore.init(name, aux_params[name], True)
+
+        kvstore.push(name, aux_params[name], priority=-index)
+
+def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names, aux_arrays=None, aux_names=None, aux_initialized=True):
+    idx = 0
+    aux_arrays_size = 0
+    if aux_arrays is not None:
+        aux_arrays_size = len(aux_arrays)
     """Perform update of param_arrays from grad_arrays on kvstore."""
     for index, pair in enumerate(zip(param_arrays, grad_arrays)):
         arg_list, grad_list = pair
@@ -150,9 +192,18 @@ def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names):
             continue
         name = param_names[index]
         # push gradient, priority is negative index
-        kvstore.push(name, grad_list, priority=-index)
+        kvstore.push(name, grad_list, priority=idx)
+        idx = idx - 1
+        if index < aux_arrays_size:
+            if(not aux_initialized):
+                kvstore.init(aux_names[index], aux_arrays[index], True)
+            kvstore.push(aux_names[index], aux_arrays[index], priority=idx)
+            kvstore.pull(aux_names[index], aux_arrays[index], priority=idx)
+            idx = idx - 1
+
         # pull back the weights
         kvstore.pull(name, arg_list, priority=-index)
+
 
 def _update_params(param_arrays, grad_arrays, updater, num_device,
                    kvstore=None, param_names=None):
@@ -835,7 +886,7 @@ class FeedForward(BASE_ESTIMATOR):
         - 'dist_sync', multiple machines communicating via BSP.
         - 'dist_async', multiple machines with asynchronous communication.
         """
-
+        logging.info("VIKAS:JHAPA")
         data = self._init_iter(X, y, is_train=True)
         eval_data = self._init_eval_iter(eval_data)
 

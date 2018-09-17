@@ -29,7 +29,7 @@ from .. import optimizer as opt
 from .. import ndarray as nd
 
 from .executor_group import DataParallelExecutorGroup
-from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
+from ..model import _create_kvstore, _initialize_kvstore, _initialize_aux_params_kvstore, _pull_from_kvstore, _update_params, _update_params_on_kvstore, _store_aux_params_on_kvstore
 from ..model import load_checkpoint
 from ..initializer import Uniform, InitDesc
 from ..io import DataDesc
@@ -72,7 +72,9 @@ class Module(BaseModule):
     def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
                  logger=logging, context=ctx.cpu(), work_load_list=None,
                  fixed_param_names=None, state_names=None, group2ctxs=None,
-                 compression_params=None):
+                 compression_params=None, data_iterator=None,
+                 ):
+        logging.basicConfig(level=logging.INFO)
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -106,10 +108,12 @@ class Module(BaseModule):
         self._label_names = label_names
         self._state_names = state_names
         self._output_names = symbol.list_outputs()
+        self._data_iterator = data_iterator
 
         self._arg_params = None
         self._aux_params = None
         self._params_dirty = False
+        self._initialized_aux_params_on_kvstore = False
 
         self._compression_params = compression_params
         self._optimizer = None
@@ -190,6 +194,13 @@ class Module(BaseModule):
         self._exec_group = None
         self._data_shapes = None
         self._label_shapes = None
+
+    def get_iterator(self, kv):
+        if(self._data_iterator is not None):
+            return self._data_iterator.get_data_iterator(kv)
+        else:
+            logging.error("data_iterator for elastic training not defined")
+            raise NotImplementedError()
 
     @property
     def data_names(self):
@@ -472,7 +483,8 @@ class Module(BaseModule):
         self._exec_group.reshape(self._data_shapes, self._label_shapes)
 
     def init_optimizer(self, kvstore='local', optimizer='sgd',
-                       optimizer_params=(('learning_rate', 0.01),), force_init=False):
+                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False, 
+                       allow_missing=False, allow_extra=False):
         """Installs and initializes optimizers.
 
         Parameters
@@ -538,13 +550,25 @@ class Module(BaseModule):
             if self._compression_params:
                 kvstore.set_gradient_compression(self._compression_params)
             if update_on_kvstore:
-                kvstore.set_optimizer(self._optimizer)
-            # copy initialized local parameters to kvstore
-            _initialize_kvstore(kvstore=kvstore,
-                                param_arrays=self._exec_group.param_arrays,
-                                arg_params=self._arg_params,
-                                param_names=self._param_names,
-                                update_on_kvstore=update_on_kvstore)
+                if initialize_from_kvstore is False:
+                    kvstore.set_optimizer(self._optimizer)
+                    # copy initialized local parameters to kvstore
+                    _initialize_kvstore(kvstore=kvstore,
+                            param_arrays=self._exec_group.param_arrays,
+                            arg_params=self._arg_params,
+                            param_names=self._param_names,
+                            update_on_kvstore=update_on_kvstore)
+                else:
+                    _initialize_kvstore(kvstore=kvstore,
+                            param_arrays=self._exec_group.param_arrays,
+                            arg_params=self._arg_params,
+                            param_names=self._param_names,
+                            update_on_kvstore=update_on_kvstore,
+                            aux_arrays=self._exec_group.aux_arrays,
+                            aux_params=self._aux_params,
+                            aux_names=self._aux_names)
+                    self._initialized_aux_params_on_kvstore = True
+                    self._sync_params_from_devices()
 
         if not update_on_kvstore:
             self._updater = opt.get_updater(optimizer)
@@ -641,7 +665,24 @@ class Module(BaseModule):
         assert self.binded and self.params_initialized
         self._exec_group.backward(out_grads=out_grads)
 
-    def update(self):
+    def store_aux_params(self):
+        """Stores aux parameters on kvstore.
+
+
+        See Also
+        ----------
+        :meth:`BaseModule.update`.
+        """
+        assert self.binded and self.params_initialized and self.optimizer_initialized
+
+        self._params_dirty = True
+
+        if self._update_on_kvstore:
+            _store_aux_params_on_kvstore(self._exec_group.aux_arrays,
+                                         self._kvstore, self._exec_group.aux_names, self._aux_params, self._initialized_aux_params_on_kvstore)
+        self._initialized_aux_params_on_kvstore = True
+
+    def update(self, update_aux_params=False):
         """Updates parameters according to the installed optimizer and the gradients computed
         in the previous forward-backward batch.
 
@@ -658,7 +699,14 @@ class Module(BaseModule):
         assert self.binded and self.params_initialized and self.optimizer_initialized
 
         self._params_dirty = True
-        if self._update_on_kvstore:
+        if self._update_on_kvstore and update_aux_params:
+            _update_params_on_kvstore(self._exec_group.param_arrays,
+                                      self._exec_group.grad_arrays,
+                                      self._kvstore, self._exec_group.param_names, self._exec_group.aux_arrays, self._exec_group.aux_names, self._initialized_aux_params_on_kvstore)
+            if self._initialized_aux_params_on_kvstore == False:
+                self._initialized_aux_params_on_kvstore = True                          
+
+        elif self._update_on_kvstore:
             _update_params_on_kvstore(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
                                       self._kvstore, self._exec_group.param_names)

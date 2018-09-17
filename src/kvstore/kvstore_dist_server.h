@@ -41,7 +41,6 @@
 
 namespace mxnet {
 namespace kvstore {
-
 // maintain same order in frontend.
 enum class CommandType {
   kController, kSetMultiPrecision, kStopServer, kSyncMode,
@@ -349,11 +348,16 @@ class KVStoreDistServer {
       // let the main thread to execute updater_, which is necessary for python
       auto& stored = has_multi_precision_copy(type) ? store_realt_[key] : store_[key];
       auto& update =  sync_mode_ ? update_buf->merged : update_buf->temp_array;
-      if (updater_) {
+      if (updater_ && key < KVStore::GetMaxAllowedKeyForUpdate()) {
         exec_.Exec([this, key, &update, &stored](){
           CHECK(updater_);
           updater_(key, update, &stored);
         });
+      } else if(sync_mode_ && updater_ && key >= KVStore::GetMaxAllowedKeyForUpdate()){
+        // push divide operator to average the value
+        // TODO is it possible to do in place???
+        // TODO should we average over number of GPUs
+        stored = update_buf->merged / ((size_t) ps::NumWorkers());
       } else {
         CHECK(sync_mode_) << "Updater needs to be set for async mode";
         // if no updater, just copy

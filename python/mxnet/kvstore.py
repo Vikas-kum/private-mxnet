@@ -113,7 +113,7 @@ class KVStore(object):
     def __del__(self):
         check_call(_LIB.MXKVStoreFree(self.handle))
 
-    def init(self, key, value):
+    def init(self, key, value, exclude_update=False):
         """ Initializes a single or a sequence of key-value pairs into the store.
 
         For each key, one must `init` it before calling `push` or `pull`.
@@ -153,9 +153,9 @@ class KVStore(object):
         """
         ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
         if use_str_keys:
-            check_call(_LIB.MXKVStoreInitEx(self.handle, mx_uint(len(ckeys)), ckeys, cvals))
+            check_call(_LIB.MXKVStoreInitEx(self.handle, mx_uint(len(ckeys)), ckeys, cvals, exclude_update))
         else:
-            check_call(_LIB.MXKVStoreInit(self.handle, mx_uint(len(ckeys)), ckeys, cvals))
+            check_call(_LIB.MXKVStoreInit(self.handle, mx_uint(len(ckeys)), ckeys, cvals, exclude_update))
 
     def push(self, key, value, priority=0):
         """ Pushes a single or a sequence of key-value pairs into the store.
@@ -447,6 +447,7 @@ class KVStore(object):
         else:
             raise Exception('Gradient compression is not supported for this type of kvstore')
 
+        
     def set_optimizer(self, optimizer):
         """ Registers an optimizer with the kvstore.
 
@@ -612,6 +613,15 @@ class KVStore(object):
         initialization is finished.
         """
         check_call(_LIB.MXKVStoreBarrier(self.handle))
+    
+    def _membership_change_barrier(self, env):
+        if ('dist' in self.type): # pylint: disable=unsupported-membership-test
+            ckeys, cvals = _ctype_dict(env)
+            check_call(_LIB.MXKVStoreMembershipChangeBarrier(self.handle,
+                                                            mx_uint(len(env)),
+                                                            ckeys, cvals))
+        else:
+            raise Exception('membership change barrier is not supported for this type of kvstore')
 
     def _send_command_to_servers(self, head, body):
         """Sends a command to all server nodes.
@@ -675,3 +685,4 @@ def create(name='local'):
     kv = KVStore(handle)
     set_kvstore_handle(kv.handle)
     return kv
+

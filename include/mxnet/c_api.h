@@ -1940,6 +1940,9 @@ MXNET_DLL int MXInitPSEnv(mx_uint num_vars,
                           const char **keys,
                           const char **vals);
 
+MXNET_DLL int MXUpdatePSEnv(const char *key,
+                            const char *val);
+
 
 /*!
  * \brief Create a kvstore
@@ -1979,7 +1982,8 @@ MXNET_DLL int MXKVStoreFree(KVStoreHandle handle);
 MXNET_DLL int MXKVStoreInit(KVStoreHandle handle,
                             mx_uint num,
                             const int* keys,
-                            NDArrayHandle* vals);
+                            NDArrayHandle* vals,
+                            bool exclude_update=false);
 
 /*!
  * \brief Init a list of (key,value) pairs in kvstore, where each key is a string
@@ -1992,7 +1996,8 @@ MXNET_DLL int MXKVStoreInit(KVStoreHandle handle,
 MXNET_DLL int MXKVStoreInitEx(KVStoreHandle handle,
                               mx_uint num,
                               const char** keys,
-                              NDArrayHandle* vals);
+                              NDArrayHandle* vals,
+                              bool exclude_update=false);
 
 /*!
  * \brief Push a list of (key,value) pairs to kvstore
@@ -2230,6 +2235,9 @@ MXNET_DLL int MXKVStoreIsSchedulerNode(int *ret);
  * \return 0 when success, -1 when failure happens
  */
 MXNET_DLL int MXKVStoreBarrier(KVStoreHandle handle);
+
+MXNET_DLL int MXKVStoreMembershipChangeBarrier(KVStoreHandle handle, int num_params, const char** keys, const char** vals);
+
 
 /**
  * \brief whether to do barrier when finalize
