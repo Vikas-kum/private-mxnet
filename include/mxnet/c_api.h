@@ -2190,6 +2190,9 @@ MXNET_DLL int MXKVStoreIsSchedulerNode(int *ret);
  */
 MXNET_DLL int MXKVStoreBarrier(KVStoreHandle handle);
 
+MXNET_DLL int MXKVStoreMembershipChangeBarrier(KVStoreHandle handle, int num_params, const char** keys, const char** vals);
+
+
 /**
  * \brief whether to do barrier when finalize
  *

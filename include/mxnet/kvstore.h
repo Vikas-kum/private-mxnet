@@ -417,6 +417,8 @@ class KVStore {
    */
   virtual void RunServer(const Controller& controller) { }
 
+  virtual void MembershipChangeBarrier(const std::vector<std::pair<std::string, std::string> >& data) {}
+
  protected:
   /**
    * \brief the user-defined updater

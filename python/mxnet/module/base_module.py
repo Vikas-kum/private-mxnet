@@ -410,7 +410,7 @@ class BaseModule(object):
     def fit(self, train_data, eval_data=None, eval_metric='acc',
             epoch_end_callback=None, batch_end_callback=None, kvstore='local',
             optimizer='sgd', optimizer_params=(('learning_rate', 0.01),),
-            eval_end_callback=None,
+            eval_end_callback=None, epoch_begin_callback=None,
             eval_batch_end_callback=None, initializer=Uniform(0.01),
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
@@ -494,24 +494,33 @@ class BaseModule(object):
         ...     eval_metric='acc', num_epoch=10, begin_epoch=3)
         """
         assert num_epoch is not None, 'please specify number of epochs'
-        while True:
-            time.sleep(5)
-            print("Sleeping........")
         self.logger.info("Vikas JHAparBase")
         self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label,
                   for_training=True, force_rebind=force_rebind)
         if monitor is not None:
             self.install_monitor(monitor)
+        import os
+        is_new_worker = os.getenv("NEW_WORKER", "0") == "1"
+        self.logger.info("new worker:%s", is_new_worker)
+        self.logger.info("ARG PARAMS: %s", arg_params)
+        self.logger.info("aux PARAMS: %s", aux_params)
+        self.logger.info("optimizer_params PARAMS: %s", optimizer_params)
+
+
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
                          allow_missing=allow_missing, force_init=force_init)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
                             optimizer_params=optimizer_params)
+        
+        self.logger.info("ARG11 PARAMS: %s", arg_params)
+        self.logger.info("aux11 PARAMS: %s", aux_params)
+        self.logger.info("optimizer_params11 PARAMS: %s", optimizer_params)
 
         if validation_metric is None:
             validation_metric = eval_metric
         if not isinstance(eval_metric, metric.EvalMetric):
             eval_metric = metric.create(eval_metric)
-
+        
         ################################################################################
         # training loop
         ################################################################################
@@ -520,8 +529,18 @@ class BaseModule(object):
             eval_metric.reset()
             nbatch = 0
             self.logger.info("Vikas JHAparBase updating env variable")
+            if epoch_begin_callback is not None:
+                for callback in _as_list(epoch_begin_callback):
+                    callback(epoch, self.symbol, arg_params, aux_params)
+           # time.sleep(15)
+            if is_new_worker is False: 
+                kvstore._membership_change_barrier({"EPOCH_BEGIN":str(begin_epoch)}) # {"EPOCH_BEGIN":str(begin_epoch)}
+            is_new_worker = False
           #  kvs.updatePSEnvVar("DMLC_NUM_WORKER","3")
+          # update num_parts anf part index 
             self.logger.info("Vikas JHAparBase updated env variable")
+            
+           ### time.sleep(1500)
 
             data_iter = iter(train_data)
             end_of_batch = False

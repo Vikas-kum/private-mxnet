@@ -1032,6 +1032,19 @@ int MXKVStoreBarrier(KVStoreHandle handle) {
   API_END();
 }
 
+int MXKVStoreMembershipChangeBarrier(KVStoreHandle handle, int num_params, const char** keys, const char** vals) {
+  API_BEGIN();
+  std::vector<std::pair<std::string, std::string> > params;
+  for (mx_uint i = 0; i < num_params; ++i) {
+    std::pair<std::string, std::string> p;
+    p.first = keys[i];
+    p.second = vals[i];
+    params.push_back(p);
+  }
+  static_cast<KVStore*>(handle)->MembershipChangeBarrier(params);
+  API_END();
+}
+
 int MXKVStoreSetBarrierBeforeExit(KVStoreHandle handle,
                                   const int barrier_before_exit) {
   API_BEGIN();

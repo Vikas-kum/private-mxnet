@@ -447,6 +447,7 @@ class KVStore(object):
         else:
             raise Exception('Gradient compression is not supported for this type of kvstore')
 
+        
     def set_optimizer(self, optimizer):
         """ Registers an optimizer with the kvstore.
 
@@ -612,6 +613,15 @@ class KVStore(object):
         initialization is finished.
         """
         check_call(_LIB.MXKVStoreBarrier(self.handle))
+    
+    def _membership_change_barrier(self, env):
+        if ('dist' in self.type): # pylint: disable=unsupported-membership-test
+            ckeys, cvals = _ctype_dict(env)
+            check_call(_LIB.MXKVStoreMembershipChangeBarrier(self.handle,
+                                                            mx_uint(len(env)),
+                                                            ckeys, cvals))
+        else:
+            raise Exception('membership change barrier is not supported for this type of kvstore')
 
     def _send_command_to_servers(self, head, body):
         """Sends a command to all server nodes.

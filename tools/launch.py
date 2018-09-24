@@ -36,6 +36,12 @@ def dmlc_opts(opts):
             '--cluster', opts.launcher,
             '--host-file', opts.hostfile,
             '--sync-dst-dir', opts.sync_dst_dir]
+    if opts.launch_worker is True:
+        args.append('--launch-worker')
+        args.append(str(opts.launch_worker))
+    if opts.elastic_training_enabled is True:
+        args.append('--elastic-training-enabled')
+        args.append(str(opts.elastic_training_enabled))
 
     # convert to dictionary
     dopts = vars(opts)
@@ -43,7 +49,26 @@ def dmlc_opts(opts):
         for v in dopts[key]:
             args.append('--' + key.replace("_","-"))
             args.append(v)
+    if dopts['elastic_training_enabled'] is True:
+        args.append('--mxnet-launch-script-path')
+        args.append(os.path.abspath(__file__))
+        args.append('--worker-host-file')
+        args.append(dopts['hostfile'] + "_worker")
+        args.append('--instance-pool')
+        args.append(dopts['instance_pool'])
+        args.append('--max-elastic-instances')
+        args.append(str(dopts['max_elastic_instances']))
+
+    if dopts['launch_worker'] is True:    
+        #args.append('--launch-worker ' + True)
+        args.append('--host')
+        args.append(dopts['host'])
+        args.append('--port')
+        args.append(dopts['port'])
+        
+    
     args += opts.command
+    logging.info("HAHAHAH 123333 %s", args)
     try:
         from dmlc_tracker import opts
     except ImportError:
@@ -51,6 +76,8 @@ def dmlc_opts(opts):
         print("    git submodule update --init --recursive")
         raise
     dmlc_opts = opts.get_opts(args)
+    logging.info("HAHAHAH %s", dmlc_opts)
+
     return dmlc_opts
 
 
@@ -86,15 +113,41 @@ def main():
                         values from current system to all workers and servers. \
                         Not necessary when launcher is local as in that case \
                         all environment variables which are set are copied.')
+    parser.add_argument('--elastic-training-enabled', type=bool, default=False,
+                        help = ' if this option is set to true, elastic training is enabled. \
+                        If True, you should specify which instance pool to use by using option \
+                        --instance-pool')
+    parser.add_argument('--instance-pool', type=str, default='DEFAULT', help=' You can use '
+                        ' [reservedInstancePoolId | \'spotInstance\', | \'DEFAULT\']' \
+                        'In case of DEFAULT a file will be created in same folder ' 
+                        ' where --hostfile lives. The default worker filename will be \'default_worker_file\'')
+    parser.add_argument('--max-elastic-instances', type=int, default=0,help = ' if instance pool is reserved' \
+                        ' or spotInstance, up to max-elastic-instances can be added to existing cluster')
+    parser.add_argument('--launch-worker', type=bool, default=False, help = 'whether this script should' \
+                        'only launch worker instances')    
+    parser.add_argument('--host', type=str, help='host name or ip of new worker host to launch')
+    parser.add_argument('--port', type=str, default='22', help='port number of new worker for ssh command to run by')           
     parser.add_argument('command', nargs='+',
                         help = 'command for launching the program')
+    # TODO verify if elastic training enabled is true
+    # verify that --instance-pool is defined , 
+    # if --instance-pool is [reserved|spot], verify that --max-elastic-instances is defined
+    # if --instance-pool is DEFAULT then , max_elastic_instance is not defined
+    # launch-worker is true, verify we have host
+
     args, unknown = parser.parse_known_args()
+  #  if args.hostfile is not None: 
+
     args.command += unknown
+    
+    logging.info("BEGING %s", args)
+
     if args.num_servers is None:
         args.num_servers = args.num_workers
 
     args = dmlc_opts(args)
-
+    
+    logging.info("JAHHAHA%s", args)
     if args.host_file is None or args.host_file == 'None':
       if args.cluster == 'yarn':
           from dmlc_tracker import yarn
@@ -105,11 +158,16 @@ def main():
       elif args.cluster == 'sge':
           from dmlc_tracker import sge
           sge.submit(args)
+      elif args.cluster == 'ssh' and args.launch_worker is True:
+          from dmlc_tracker import ssh
+          logging.info("Vikas dmlc_tracker ssh %s", args)
+          ssh.submit(args)
       else:
           raise RuntimeError('Unknown submission cluster type %s' % args.cluster)
     else:
       if args.cluster == 'ssh':
           from dmlc_tracker import ssh
+          logging.info("Vikas dmlc_tracker ssh %s", args)
           ssh.submit(args)
       elif args.cluster == 'mpi':
           from dmlc_tracker import mpi
@@ -123,6 +181,6 @@ def signal_handler(signal, frame):
 
 if __name__ == '__main__':
     fmt = '%(asctime)s %(levelname)s %(message)s'
-    logging.basicConfig(filename='/tmp/dt_log.log',format=fmt, level=logging.INFO)
+    logging.basicConfig(format=fmt, level=logging.INFO)
     signal.signal(signal.SIGINT, signal_handler)
     main()
