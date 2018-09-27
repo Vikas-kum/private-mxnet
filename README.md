@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <div align="center">
   <a href="https://mxnet.incubator.apache.org/"><img src="https://raw.githubusercontent.com/dmlc/web-data/master/mxnet/image/mxnet_logo_2.png"></a><br>
 </div>
@@ -93,3 +94,7 @@ In Neural Information Processing Systems, Workshop on Machine Learning Systems, 
 History
 -------
 MXNet emerged from a collaboration by the authors of [cxxnet](https://github.com/dmlc/cxxnet), [minerva](https://github.com/dmlc/minerva), and [purine2](https://github.com/purine/purine2). The project reflects what we have learned from the past projects. MXNet combines aspects of each of these projects to achieve flexibility, speed, and memory efficiency.
+=======
+# private-mxnet
+private mxnet repo
+>>>>>>> 716f1932ec51bba18c437761df4c693656a012f1
