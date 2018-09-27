@@ -274,13 +274,6 @@ class KVStore {
 #endif  // MXNET_USE_DIST_KVSTORE
   }
 
-  static void updatePSEnvVar(std::string& env_var, std::string& val){
- #if MXNET_USE_DIST_KVSTORE
-    ps::Postoffice::Get()->updateEnvironmentVariable(env_var, val);
- #else
-    LOG(FATAL) << "compile with USE_DIST_KVSTORE=1 to update parameter server's environment";
- #endif   
-  }
   /**
    * \return whether or not this process is a worker node.
    *

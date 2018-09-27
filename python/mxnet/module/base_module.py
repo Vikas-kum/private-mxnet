@@ -536,7 +536,6 @@ class BaseModule(object):
             if is_new_worker is False: 
                 kvstore._membership_change_barrier({"EPOCH_BEGIN":str(begin_epoch)}) # {"EPOCH_BEGIN":str(begin_epoch)}
             is_new_worker = False
-          #  kvs.updatePSEnvVar("DMLC_NUM_WORKER","3")
           # update num_parts anf part index 
             self.logger.info("Vikas JHAparBase updated env variable")
             

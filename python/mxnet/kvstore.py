@@ -686,7 +686,3 @@ def create(name='local'):
     set_kvstore_handle(kv.handle)
     return kv
 
-def updatePSEnvVar(key, val):
-    if not isinstance(key, string_types):
-        raise TypeError('key must be a string')
-    check_call(_LIB.MXUpdatePSEnv(c_str(key), c_str(val)))
