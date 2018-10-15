@@ -529,6 +529,7 @@ class BaseModule(object):
             eval_metric.reset()
             epoch_eval_metric.reset()
             nbatch = 0
+            prev_worker_count = kvstore.num_workers
             self.logger.info("Vikas JHAparBase updating env variable")
             if epoch_begin_callback is not None:
                 for callback in _as_list(epoch_begin_callback):
@@ -541,9 +542,12 @@ class BaseModule(object):
             is_new_worker = False
           # update num_parts anf part index 
             self.logger.info("Vikas JHAparBase updated env variable")
+            new_worker_count = kvstore.num_workers
             
            ### time.sleep(1500)
-
+            if prev_worker_count != new_worker_count:
+                logging.info("Resetting data iterator as worker count changed from {} to {}".format(prev_worker_count, new_worker_count))
+                train_data, eval_data = self.get_iterator(kvstore)
             data_iter = iter(train_data)
             end_of_batch = False
             next_data_batch = next(data_iter)
@@ -815,6 +819,9 @@ class BaseModule(object):
 
     def install_monitor(self, mon):
         """Installs monitor on all executors."""
+        raise NotImplementedError()
+
+    def get_iterator(self, kv):
         raise NotImplementedError()
 
     ################################################################################

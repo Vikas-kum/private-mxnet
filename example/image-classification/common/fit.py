@@ -23,8 +23,25 @@ import re
 import math
 import mxnet as mx
 
+
+
 def get_epoch_size(args, kv):
     return math.ceil(int(args.num_examples / kv.num_workers) / args.batch_size)
+
+class ETDataIterator(mx.mod.BaseDataIterator):
+    def __init__(self, args, data_loader):
+        self._args = args
+        self._data_loader = data_loader
+    def get_data_iterator(self, kv):
+        # data iterators
+        (train, val) = self._data_loader(self._args, kv)
+        if 'dist' in self._args.kv_store and not 'async' in self._args.kv_store:
+            epoch_size = get_epoch_size(self._args, kv)
+            logging.info('Resizing training data to %d batches per machine', epoch_size)
+            # resize train iter to ensure each machine has same number of batches per epoch
+            # if not, dist_sync can hang at the end with one machine waiting for other machines
+            train = mx.io.ResizeIter(train, epoch_size)
+        return train,val
 
 def _get_lr_scheduler(args, kv):
     if 'lr_factor' not in args or args.lr_factor >= 1:
@@ -218,11 +235,12 @@ def fit(args, network, data_loader, **kwargs):
 
     # learning rate
     lr, lr_scheduler = _get_lr_scheduler(args, kv)
-
+    data_iterator = ETDataIterator(args, data_loader)
     # create model
     model = mx.mod.Module(
         context=devs,
-        symbol=network
+        symbol=network,
+        data_iterator=data_iterator
     )
 
     lr_scheduler = lr_scheduler

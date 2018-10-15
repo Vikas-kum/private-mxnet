@@ -25,24 +25,7 @@ from common import find_mxnet, data, fit
 from common.util import download_file
 import mxnet as mx
 
-def download_cifar10():
-    data_dir="data"
-    fnames = (os.path.join(data_dir, "cifar10_train.rec"),
-              os.path.join(data_dir, "cifar10_val.rec"))
-    download_file('http://data.mxnet.io/data/cifar10/cifar10_val.rec', fnames[1])
-    download_file('http://data.mxnet.io/data/cifar10/cifar10_train.rec', fnames[0])
-    return fnames
-
-def set_cifar_aug(aug):
-    aug.set_defaults(rgb_mean='125.307,122.961,113.8575', rgb_std='51.5865,50.847,51.255')
-    aug.set_defaults(random_mirror=1, pad=4, fill_value=0, random_crop=1)
-    aug.set_defaults(min_random_size=32, max_random_size=32)
-
-if __name__ == '__main__':
-    logging.info("Calling main train_cifar10 module: %s %s", os.getpid(), os.environ)
-    # download data
-    (train_fname, val_fname) = download_cifar10()
-
+def prepare_args():
     # parse args
     parser = argparse.ArgumentParser(description="train cifar10",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -68,7 +51,27 @@ if __name__ == '__main__':
         lr             = .05,
         lr_step_epochs = '200,250',
     )
-    args = parser.parse_args()
+    return parser.parse_args(), fit, data
+
+def download_cifar10():
+    data_dir="data"
+    fnames = (os.path.join(data_dir, "cifar10_train.rec"),
+              os.path.join(data_dir, "cifar10_val.rec"))
+    download_file('http://data.mxnet.io/data/cifar10/cifar10_val.rec', fnames[1])
+    download_file('http://data.mxnet.io/data/cifar10/cifar10_train.rec', fnames[0])
+    return fnames
+
+def set_cifar_aug(aug):
+    aug.set_defaults(rgb_mean='125.307,122.961,113.8575', rgb_std='51.5865,50.847,51.255')
+    aug.set_defaults(random_mirror=1, pad=4, fill_value=0, random_crop=1)
+    aug.set_defaults(min_random_size=32, max_random_size=32)
+
+if __name__ == '__main__':
+    logging.info("Calling main train_cifar10 module: %s %s", os.getpid(), os.environ)
+    # download data
+    (train_fname, val_fname) = download_cifar10()
+
+    args, fit, data = prepare_args()
 
     # load network
     from importlib import import_module

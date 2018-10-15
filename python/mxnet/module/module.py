@@ -72,7 +72,8 @@ class Module(BaseModule):
     def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
                  logger=logging, context=ctx.cpu(), work_load_list=None,
                  fixed_param_names=None, state_names=None, group2ctxs=None,
-                 compression_params=None):
+                 compression_params=None, data_iterator=None,
+                 ):
         logging.basicConfig(level=logging.INFO)
         super(Module, self).__init__(logger=logger)
 
@@ -107,6 +108,7 @@ class Module(BaseModule):
         self._label_names = label_names
         self._state_names = state_names
         self._output_names = symbol.list_outputs()
+        self._data_iterator = data_iterator
 
         self._arg_params = None
         self._aux_params = None
@@ -191,6 +193,13 @@ class Module(BaseModule):
         self._exec_group = None
         self._data_shapes = None
         self._label_shapes = None
+
+    def get_iterator(self, kv):
+        if(self._data_iterator is not None):
+            return self._data_iterator.get_data_iterator(kv)
+        else:
+            logging.error("data_iterator for elastic training not defined")
+            raise NotImplementedError()
 
     @property
     def data_names(self):

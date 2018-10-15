@@ -133,6 +133,7 @@ def _initialize_aux_params_kvstore(kvstore, aux_arrays, aux_params, aux_names, u
             kvstore.pull(name, param_on_devs, priority=-idx)
 
 def _pull_from_kvstore(kvstore, param_arrays, aux_arrays, param_names, aux_names):
+    # params and aux should be interleaved
     for idx, param_on_devs in enumerate(param_arrays):
         name = param_names[idx]
         kvstore.pull(name, param_on_devs, priority=-idx)
