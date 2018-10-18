@@ -555,7 +555,7 @@ class BaseModule(object):
                 data_batch = next_data_batch
                 if monitor is not None:
                     monitor.tic()
-                #self.forward_backward(data_batch)
+                self.forward_backward(data_batch)
                 self.update()
 
                 if isinstance(data_batch, list):
