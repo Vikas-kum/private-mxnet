@@ -502,6 +502,8 @@ class BaseModule(object):
             self.install_monitor(monitor)
         import os
         is_new_worker = os.getenv("NEW_WORKER", "0") == "1"
+        begin_epoch_str = os.getenv("EPOCH_BEGIN", str(begin_epoch))
+        begin_epoch = int(begin_epoch_str)
         is_elastic_training_enabled = os.getenv("ELASTIC_TRAINING_ENABLED", "0") == "1"
         #should_initialize_from_kvstore = is_new_worker and is_elastic_training_enabled
 
@@ -534,10 +536,8 @@ class BaseModule(object):
             if epoch_begin_callback is not None:
                 for callback in _as_list(epoch_begin_callback):
                     callback(epoch, self.symbol, arg_params, aux_params)
-            self.logger.info("Vikas sleeping")
-            time.sleep(15)
             if is_elastic_training_enabled == True and is_new_worker == False: 
-                kvstore._membership_change_barrier({"EPOCH_BEGIN":str(begin_epoch)}) # {"EPOCH_BEGIN":str(begin_epoch)}
+                kvstore._membership_change_barrier({"EPOCH_BEGIN":str(epoch)})
                 self.logger.info("Called MCB")
             is_new_worker = False
           # update num_parts anf part index 
@@ -555,7 +555,7 @@ class BaseModule(object):
                 data_batch = next_data_batch
                 if monitor is not None:
                     monitor.tic()
-                self.forward_backward(data_batch)
+                #self.forward_backward(data_batch)
                 self.update()
 
                 if isinstance(data_batch, list):
@@ -599,6 +599,9 @@ class BaseModule(object):
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
             self.set_params(arg_params, aux_params)
+            # TODO VIK can we call it if only worker has changed
+            if is_elastic_training_enabled:
+                self.store_aux_params()
 
             if epoch_end_callback is not None:
                 for callback in _as_list(epoch_end_callback):
@@ -978,7 +981,7 @@ class BaseModule(object):
         """
         raise NotImplementedError()
 
-    def update(self):
+    def update(self, update_aux_params=False):
         """Updates parameters according to the installed optimizer and the gradients computed
         in the previous forward-backward batch.
 
@@ -1002,30 +1005,8 @@ class BaseModule(object):
             ...]]
         """
         raise NotImplementedError()
-    
-    def update(self):
-        """Updates parameters according to the installed optimizer and the gradients computed
-        in the previous forward-backward batch.
 
-        When KVStore is used to update parameters for multi-device or multi-machine training,
-        a copy of the parameters are stored in KVStore. Note that for `row_sparse` parameters,
-        this function does update the copy of parameters in KVStore, but doesn't broadcast the
-        updated parameters to all devices / machines. Please call `prepare` to broadcast
-        `row_sparse` parameters with the next batch of data.
-
-        Examples
-        --------
-        >>> # An example of updating module parameters.
-        >>> mod.init_optimizer(kvstore='local', optimizer='sgd',
-        ...     optimizer_params=(('learning_rate', 0.01), ))
-        >>> mod.backward()
-        >>> mod.update()
-        >>> print mod.get_params()[0]['fc3_weight'].asnumpy()
-        [[  5.86930104e-03   5.28078526e-03  -8.88729654e-03  -1.08308345e-03
-            6.13054074e-03   4.27560415e-03   1.53817423e-03   4.62131854e-03
-            4.69872449e-03  -2.42400169e-03   9.94111411e-04   1.12386420e-03
-            ...]]
-        """
+    def store_aux_params(self):
         raise NotImplementedError()
 
     def update_metric(self, eval_metric, labels, pre_sliced=False):

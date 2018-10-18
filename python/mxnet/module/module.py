@@ -29,7 +29,7 @@ from .. import optimizer as opt
 from .. import ndarray as nd
 
 from .executor_group import DataParallelExecutorGroup
-from ..model import _create_kvstore, _initialize_kvstore, _initialize_aux_params_kvstore, _store_aux_params_on_kvstore, _pull_from_kvstore, _update_params, _update_params_on_kvstore
+from ..model import _create_kvstore, _initialize_kvstore, _initialize_aux_params_kvstore, _pull_from_kvstore, _update_params, _update_params_on_kvstore, _store_aux_params_on_kvstore
 from ..model import load_checkpoint
 from ..initializer import Uniform, InitDesc
 from ..io import DataDesc
@@ -113,6 +113,7 @@ class Module(BaseModule):
         self._arg_params = None
         self._aux_params = None
         self._params_dirty = False
+        self._initialized_aux_params_on_kvstore = False
 
         self._compression_params = compression_params
         self._optimizer = None
@@ -549,17 +550,23 @@ class Module(BaseModule):
                 kvstore.set_gradient_compression(self._compression_params)
             if update_on_kvstore:
                 kvstore.set_optimizer(self._optimizer)
-                # copy initialized local parameters to kvstore
-                _initialize_kvstore(kvstore=kvstore,
-                                param_arrays=self._exec_group.param_arrays,
-                                arg_params=self._arg_params,
-                                param_names=self._param_names,
-                                update_on_kvstore=update_on_kvstore)
-                _initialize_aux_params_kvstore(kvstore=kvstore,
-                                aux_arrays=self._exec_group.aux_arrays,
-                                aux_params=self._aux_params,
-                                aux_names=self._aux_names,
-                                update_on_kvstore=update_on_kvstore)
+                if initialize_from_kvstore is False:
+                    # copy initialized local parameters to kvstore
+                    _initialize_kvstore(kvstore=kvstore,
+                            param_arrays=self._exec_group.param_arrays,
+                            arg_params=self._arg_params,
+                            param_names=self._param_names,
+                            update_on_kvstore=update_on_kvstore)
+                else:
+                    _initialize_kvstore(kvstore=kvstore,
+                            param_arrays=self._exec_group.param_arrays,
+                            arg_params=self._arg_params,
+                            param_names=self._param_names,
+                            update_on_kvstore=update_on_kvstore,
+                            aux_arrays=self._exec_group.aux_arrays,
+                            aux_params=self._aux_params,
+                            aux_names=self._aux_names)
+                    self._initialized_aux_params_on_kvstore = True
         #if initialize_from_kvstore is True:
             #print("VIK pulling from KVSTORE")
             #_pull_from_kvstore(kvstore=kvstore,
@@ -667,7 +674,24 @@ class Module(BaseModule):
         assert self.binded and self.params_initialized
         self._exec_group.backward(out_grads=out_grads)
 
-    def update(self):
+    def store_aux_params(self):
+        """Stores aux parameters on kvstore.
+
+
+        See Also
+        ----------
+        :meth:`BaseModule.update`.
+        """
+        assert self.binded and self.params_initialized and self.optimizer_initialized
+
+        self._params_dirty = True
+
+        if self._update_on_kvstore:
+            _store_aux_params_on_kvstore(self._exec_group.aux_arrays,
+                                         self._kvstore, self._exec_group.aux_names, self._aux_params, self._initialized_aux_params_on_kvstore)
+        self._initialized_aux_params_on_kvstore = True
+
+    def update(self, update_aux_params=False):
         """Updates parameters according to the installed optimizer and the gradients computed
         in the previous forward-backward batch.
 
@@ -684,11 +708,15 @@ class Module(BaseModule):
         assert self.binded and self.params_initialized and self.optimizer_initialized
 
         self._params_dirty = True
-        if self._update_on_kvstore:
+        if self._update_on_kvstore and update_aux_params:
+            _update_params_on_kvstore(self._exec_group.param_arrays,
+                                      self._exec_group.grad_arrays,
+                                      self._kvstore, self._exec_group.param_names, self._exec_group.aux_arrays, self._exec_group.aux_names)
+
+        elif self._update_on_kvstore:
             _update_params_on_kvstore(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
                                       self._kvstore, self._exec_group.param_names)
-
         else:
             _update_params(self._exec_group.param_arrays,
                            self._exec_group.grad_arrays,
@@ -696,21 +724,6 @@ class Module(BaseModule):
                            num_device=len(self._context),
                            kvstore=self._kvstore,
                            param_names=self._exec_group.param_names)
-
-    def store_aux_params(self):
-        """Stores aux parameters on kvstore.
-
-
-        See Also
-        ----------
-        :meth:`BaseModule.update`.
-        """
-        assert self.binded and self.params_initialized and self.optimizer_initialized
-
-        self._params_dirty = True
-        if self._update_on_kvstore:
-            _store_aux_params_on_kvstore(self._exec_group.aux_arrays,
-                                         self._kvstore, self._exec_group.aux_names)
 
     def get_outputs(self, merge_multi_context=True):
         """Gets outputs of the previous forward computation.
