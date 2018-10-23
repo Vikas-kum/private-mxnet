@@ -129,6 +129,8 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names, update_o
         if update_on_kvstore:
             kvstore.pull(name, param_on_devs, priority=-idx)
             if idx < aux_arrays_size:
+                logging.info("Pulling aux_name:{}".format(aux_names[idx]))
+
                 kvstore.pull(aux_names[idx], aux_arrays[idx], priority=-idx)
 
 def _initialize_aux_params_kvstore(kvstore, aux_arrays, aux_params, aux_names, update_on_kvstore):
@@ -176,9 +178,9 @@ def _store_aux_params_on_kvstore(aux_arrays, kvstore, aux_names, aux_params, is_
         if(not is_initialized):
             kvstore.init(name, aux_params[name], True)
 
-        kvstore.push(name, aux_val, priority=-index)
+        kvstore.push(name, aux_params[name], priority=-index)
 
-def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names, aux_arrays=None, aux_names=None):
+def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names, aux_arrays=None, aux_names=None, aux_initialized=True):
     idx = 0
     aux_arrays_size = 0
     if aux_arrays is not None:
@@ -193,7 +195,10 @@ def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names, a
         kvstore.push(name, grad_list, priority=idx)
         idx = idx - 1
         if index < aux_arrays_size:
+            if(not aux_initialized):
+                kvstore.init(aux_names[index], aux_arrays[index], True)
             kvstore.push(aux_names[index], aux_arrays[index], priority=idx)
+            kvstore.pull(aux_names[index], aux_arrays[index], priority=idx)
             idx = idx - 1
 
         # pull back the weights

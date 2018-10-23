@@ -483,7 +483,8 @@ class Module(BaseModule):
         self._exec_group.reshape(self._data_shapes, self._label_shapes)
 
     def init_optimizer(self, kvstore='local', optimizer='sgd',
-                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False):
+                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False, 
+                       allow_missing=False, allow_extra=False):
         """Installs and initializes optimizers.
 
         Parameters
@@ -567,17 +568,8 @@ class Module(BaseModule):
                             aux_params=self._aux_params,
                             aux_names=self._aux_names)
                     self._initialized_aux_params_on_kvstore = True
-        #if initialize_from_kvstore is True:
-            #print("VIK pulling from KVSTORE")
-            #_pull_from_kvstore(kvstore=kvstore,
-            #                   param_arrays=self._exec_group.param_arrays,
-            #                   aux_arrays=self._exec_group.aux_arrays,
-        #                   param_names=self._param_names,
-        #                   aux_names=self._aux_names)
-
-        print("VIK param_names: {}".format(self._param_names))
-        print("VIK arg_params: {}", self._arg_params)
-        print("VIK aux_params:{}", self._aux_params)
+                    # copy the initialized parameters to devices
+                    self._exec_group.set_params(self._arg_params, self._aux_params, allow_extra=allow_extra)
 
         if not update_on_kvstore:
             self._updater = opt.get_updater(optimizer)
@@ -711,7 +703,9 @@ class Module(BaseModule):
         if self._update_on_kvstore and update_aux_params:
             _update_params_on_kvstore(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
-                                      self._kvstore, self._exec_group.param_names, self._exec_group.aux_arrays, self._exec_group.aux_names)
+                                      self._kvstore, self._exec_group.param_names, self._exec_group.aux_arrays, self._exec_group.aux_names, self._initialized_aux_params_on_kvstore)
+            if self._initialized_aux_params_on_kvstore == False:
+                self._initialized_aux_params_on_kvstore = True                          
 
         elif self._update_on_kvstore:
             _update_params_on_kvstore(self._exec_group.param_arrays,

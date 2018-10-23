@@ -24,6 +24,7 @@ import logging
 import warnings
 import copy
 import numpy as np
+import os
 
 from .. import metric
 from .. import ndarray
@@ -495,34 +496,34 @@ class BaseModule(object):
         ...     eval_metric='acc', num_epoch=10, begin_epoch=3)
         """
         assert num_epoch is not None, 'please specify number of epochs'
-        self.logger.info("Vikas JHAparBase")
         self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label,
                   for_training=True, force_rebind=force_rebind)
         if monitor is not None:
             self.install_monitor(monitor)
-        import os
         is_new_worker = os.getenv("NEW_WORKER", "0") == "1"
         begin_epoch_str = os.getenv("EPOCH_BEGIN", str(begin_epoch))
         begin_epoch = int(begin_epoch_str)
         is_elastic_training_enabled = os.getenv("ELASTIC_TRAINING_ENABLED", "0") == "1"
-        #should_initialize_from_kvstore = is_new_worker and is_elastic_training_enabled
 
-        self.logger.info("Vikas TATATA:elastic training enabled/ne_worker {}/{}".format(is_elastic_training_enabled, is_new_worker))
+        self.logger.info("elastic training enabled/new_worker {}/{}".format(is_elastic_training_enabled, is_new_worker))
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
                          allow_missing=allow_missing, force_init=force_init)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
-                            optimizer_params=optimizer_params, initialize_from_kvstore=is_new_worker)
-        
-        self.logger.info("new worker:%s", is_new_worker)
-        self.logger.info("ARG PARAMS: %s", arg_params)
-        self.logger.info("aux PARAMS: %s", aux_params)
-        self.logger.info("optimizer_params PARAMS: %s", optimizer_params)
+                            optimizer_params=optimizer_params, initialize_from_kvstore=is_new_worker,
+                            allow_missing=allow_missing, force_init=force_init)
+
         if validation_metric is None:
             validation_metric = eval_metric
         if not isinstance(eval_metric, metric.EvalMetric):
             eval_metric = metric.create(eval_metric)
         epoch_eval_metric = copy.deepcopy(eval_metric)
-        
+
+        if is_new_worker == True:
+            dup_arg_params, dup_aux_params = self.get_params()
+            self.logger.info("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_aux_params))
+            self.logger.info("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_arg_params))
+
+
         ################################################################################
         # training loop
         ################################################################################
@@ -532,22 +533,22 @@ class BaseModule(object):
             epoch_eval_metric.reset()
             nbatch = 0
             prev_worker_count = kvstore.num_workers
-            self.logger.info("Vikas JHAparBase updating env variable")
+            self.logger.info("{} KVstore my_rank:{}".format(os.getpid(), kvstore.rank))
             if epoch_begin_callback is not None:
                 for callback in _as_list(epoch_begin_callback):
                     callback(epoch, self.symbol, arg_params, aux_params)
             if is_elastic_training_enabled == True and is_new_worker == False: 
+                self.logger.info("Pid:{} Calling MembershipChangeBarrier".format(os.getpid()))
                 kvstore._membership_change_barrier({"EPOCH_BEGIN":str(epoch)})
-                self.logger.info("Called MCB")
+                self.logger.info("Pid:{} MembershipChangeBarrier finished.".format(os.getpid()))
             is_new_worker = False
-          # update num_parts anf part index 
-            self.logger.info("Vikas JHAparBase updated env variable")
             new_worker_count = kvstore.num_workers
             
-           ### time.sleep(1500)
             if prev_worker_count != new_worker_count:
                 logging.info("Resetting data iterator as worker count changed from {} to {}".format(prev_worker_count, new_worker_count))
                 train_data, eval_data = self.get_iterator(kvstore)
+            elif is_new_worker == True:
+                logging.info("This is new worker with pid:{}".format(os.getpid()))
             data_iter = iter(train_data)
             end_of_batch = False
             next_data_batch = next(data_iter)
@@ -599,8 +600,10 @@ class BaseModule(object):
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
             self.set_params(arg_params, aux_params)
-            # TODO VIK can we call it if only worker has changed
+            self.logger.info("Pid:{} my_rank:{} arg_params:{}".format(os.getpid(), kvstore.rank, arg_params))
+            self.logger.info("Pid:{} my_rank:{} aux_params:{}".format(os.getpid(), kvstore.rank, aux_params))
             if is_elastic_training_enabled:
+                self.logger.info('Storing aux params in KVStore')
                 self.store_aux_params()
 
             if epoch_end_callback is not None:
@@ -609,6 +612,7 @@ class BaseModule(object):
 
             #----------------------------------------
             # evaluation on validation set
+            self.logger.info("Calling score")
             if eval_data:
                 res = self.score(eval_data, validation_metric,
                                  score_end_callback=eval_end_callback,
@@ -1075,7 +1079,8 @@ class BaseModule(object):
         raise NotImplementedError()
 
     def init_optimizer(self, kvstore='local', optimizer='sgd',
-                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False):
+                       optimizer_params=(('learning_rate', 0.01),), force_init=False, initialize_from_kvstore=False,
+                       allow_missing=False):
         """Installs and initializes optimizers, as well as initialize kvstore for
            distributed training
 

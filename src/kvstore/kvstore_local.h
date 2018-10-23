@@ -108,12 +108,8 @@ class KVStoreLocal : public KVStore {
       int key;
       if(exclude_update){
         key = next_str_key_with_exclude_update_++;
-        LOG(ERROR) <<" VIK exclude update is true: name:" << str_key << " ID:" << key << " "<< getpid();
-
       } else {
         key = next_str_key_++;
-        LOG(ERROR) <<" VIK exclude update is false: name:" << str_key << " ID:" << key<< " "<< getpid();
-
       }
       str_key_dict_[str_key] = key;
       // record reverse mapping from int to string

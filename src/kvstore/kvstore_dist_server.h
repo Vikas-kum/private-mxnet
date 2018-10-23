@@ -356,9 +356,8 @@ class KVStoreDistServer {
       } else if(sync_mode_ && updater_ && key >= KVStore::GetMaxAllowedKeyForUpdate()){
         // push divide operator to average the value
         // TODO is it possible to do in place???
+        // TODO should we average over number of GPUs
         stored = update_buf->merged / ((size_t) ps::NumWorkers());
-        LOG(ERROR) << " APPLYUPDATE Got average for key:" << key;
-       // CopyFromTo(update_buf->merged, &stored);
       } else {
         CHECK(sync_mode_) << "Updater needs to be set for async mode";
         // if no updater, just copy
