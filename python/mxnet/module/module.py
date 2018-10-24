@@ -568,8 +568,7 @@ class Module(BaseModule):
                             aux_params=self._aux_params,
                             aux_names=self._aux_names)
                     self._initialized_aux_params_on_kvstore = True
-                    # copy the initialized parameters to devices
-                    #self._exec_group.set_params(self._arg_params, self._aux_params, allow_extra=allow_extra)
+                    self._sync_params_from_devices()
 
         if not update_on_kvstore:
             self._updater = opt.get_updater(optimizer)
