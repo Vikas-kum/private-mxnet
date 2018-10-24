@@ -520,8 +520,8 @@ class BaseModule(object):
 
         if is_new_worker == True:
             dup_arg_params, dup_aux_params = self.get_params()
-            self.logger.info("New worker Pid:{} , new_arg_params :{}".format(os.getpid(), dup_aux_params))
-            self.logger.info("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_arg_params))
+            self.logger.info("New worker Pid:{} , new_arg_params :{}".format(os.getpid(), dup_arg_params))
+            self.logger.info("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_aux_params))
 
 
         ################################################################################
