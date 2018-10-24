@@ -131,7 +131,7 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names, update_o
             if idx < aux_arrays_size:
                 logging.info("Pulling aux_name:{}".format(aux_names[idx]))
 
-                kvstore.pull(aux_names[idx], aux_params[aux_name], priority=-idx)
+                kvstore.pull(aux_names[idx], aux_arrays[idx], priority=-idx)
 
 def _initialize_aux_params_kvstore(kvstore, aux_arrays, aux_params, aux_names, update_on_kvstore):
     """Initialize aux_params on kvstore"""
