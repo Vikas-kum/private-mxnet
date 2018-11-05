@@ -20,7 +20,6 @@ import argparse
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-logging.info("Calling train_cifar10 module: %s %s", os.getpid(), os.environ)
 from common import find_mxnet, data, fit
 from common.util import download_file
 import mxnet as mx
@@ -67,7 +66,6 @@ def set_cifar_aug(aug):
     aug.set_defaults(min_random_size=32, max_random_size=32)
 
 if __name__ == '__main__':
-    logging.info("Calling main train_cifar10 module: %s %s", os.getpid(), os.environ)
     # download data
     (train_fname, val_fname) = download_cifar10()
 
@@ -77,6 +75,5 @@ if __name__ == '__main__':
     from importlib import import_module
     net = import_module('symbols.'+args.network)
     sym = net.get_symbol(**vars(args))
-    logging.info("Calling fit module: %s %s", os.getpid(), os.environ)
     # train
     fit.fit(args, sym, data.get_rec_iter)
