@@ -24,6 +24,15 @@ import argparse
 import os, sys
 import signal
 import logging
+import time
+from threading import Thread
+
+try:
+    import boto3
+except ImportError:
+    import pip
+    pip.main(['install', 'boto3'])
+    import boto3
 
 curr_path = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(os.path.join(curr_path, "../3rdparty/dmlc-core/tracker"))
@@ -81,6 +90,134 @@ def dmlc_opts(opts):
     return dmlc_opts
 
 
+def manage_elastic_instance(worker_host_file, fixed_num_worker):
+
+    remove_instances_queue = {}
+    add_instances_queue = {}
+    seqnum_seen_in_log = -1
+
+    while(True):
+        existing_elastic_workers = set()
+        count = 0
+        new_worker_set = []
+        with open(worker_host_file) as whf:
+            for host_ip in whf:
+                host_ip = host_ip.strip()
+                if count < fixed_num_worker:
+                    count = count + 1
+                    new_worker_set.append(host_ip)
+                    logging.debug("Adding host_ip:{} to new_worker_set".format(host_ip))
+                    continue
+                existing_elastic_workers.add(host_ip.strip())
+                logging.debug("Adding hostIp:{} to existing worker set". format(host_ip))
+
+        region = os.getenv('AWS_REGION')
+        launch_template_id = os.getenv('WORKER_LAUNCH_TEMPLATE_ID')
+        elastic_tag = os.getenv('ELASTIC_WORKER_TAG')
+        elastic_worker_status_tag_key = 'elastic_worker_status'
+        elastic_worker_status_removing_tag_value = 'REMOVAL_QUEUED'
+
+        elastic_worker_status_adding_tag_value = "ADD_QUEUED"
+        elastic_worker_status_added_tag_value = "ADDED"
+        elastic_worker_status_removed_tag_value = "REMOVED"
+        node_type = 'Worker'
+
+        filters = [{'Name':'tag:aws:ec2launchtemplate:id', 'Values':[launch_template_id]},
+            {'Name':'tag:NodeType', 'Values':[node_type]},
+            {'Name': 'instance-state-name', 'Values': ['running']}]
+        ec2 = boto3.client('ec2', region_name=region)
+        response = ec2.describe_instances(Filters=filters)
+        current_valid_elastic_worker_privateIps = {}
+        removed_instances_tag_req = {}
+        for reservation in response['Reservations']:
+            for instance in reservation['Instances']:
+                should_add_remove_tag = True
+                tags = instance['Tags']
+                privateIp = instance['PrivateIpAddress']
+                for kv in tags:
+                    if kv['Key'] == elastic_tag:
+                        current_valid_elastic_worker_privateIps[privateIp] = instance['InstanceId']
+                        logging.info("Adding privateip:{} to current_valid_elastic_worker".format(instance['PrivateIpAddress']))
+                    # get all the instances previously queued for removal
+                    if kv['Key'] ==  elastic_worker_status_tag_key and elastic_worker_status_removing_tag_value == kv['Value']:
+                        remove_instances_queue[privateIp] = instance['InstanceId']
+                        logging.info("Got removing tag for host:{} indtanceId:{}".format(instance['PrivateIpAddress'], instance['InstanceId']))
+                        should_add_remove_tag = False
+                    elif kv['Key'] ==  elastic_worker_status_tag_key and elastic_worker_status_adding_tag_value == kv['Value']:
+                        add_instances_queue[privateIp] = instance['InstanceId']
+                        logging.info("Got adding tag for host:{} indtanceId:{}".format(instance['PrivateIpAddress'], instance['InstanceId']))
+
+                # this instance need to be queued for removal now
+                if privateIp not in current_valid_elastic_worker_privateIps and should_add_remove_tag == True:
+                    removed_instances_tag_req[instance['PrivateIpAddress']] = instance['InstanceId']
+                    logging.info("Will add remove tag for host:{} indtanceId:{}".format(instance['PrivateIpAddress'], instance['InstanceId']))
+
+        worker_host_log_file = worker_host_file + "_log"
+        latest_removed_instance_ids = []
+        if os.path.exists(worker_host_log_file):
+            with open(worker_host_log_file) as whl:
+                for line in whl:
+                    # Each line should be in format SEQNUM ADDED|REMOVED HOSTIP TIME_SINCE_EPOCH
+                    # delimiter is space ' '
+                    splitted = line.split()
+                    seqnum = int(splitted[0])
+                    if seqnum <= seqnum_seen_in_log:
+                        continue
+                    if splitted[1] == 'ADDED':
+                        if splitted[2] in add_instances_queue:
+                            instanceId = add_instances_queue[splitted[2]]
+                            ec2.create_tags(Resources=[instanceId], Tags=[{'Key':elastic_worker_status_tag_key, 'Value':elastic_worker_status_added_tag_value}])
+                            add_instances_queue.pop(splitted[2])
+                    if splitted[1] == 'REMOVED':
+                        if splitted[2] in remove_instances_queue:
+                            instanceId = remove_instances_queue[splitted[2]]
+                            latest_removed_instance_ids.append(instanceId)
+                            ec2.create_tags(Resources=[instanceId], Tags=[{'Key':elastic_worker_status_tag_key, 'Value':elastic_worker_status_removed_tag_value}])
+                            remove_instances_queue.pop(splitted[2])
+                    seqnum_seen_in_log = seqnum
+        logging.debug("Last seqnum seen in worker host file log {}".format(seqnum_seen_in_log))
+
+        if len(latest_removed_instance_ids) > 0:
+            instaceIdsJoined = ",".join(latest_removed_instance_ids)
+            logging.info("Terminating instance Ids: {}".format(instaceIdsJoined))
+            ec2.terminate_instances(InstanceIds=latest_removed_instance_ids)
+
+        hosts_to_remove = set()
+        new_instance_add_queue = {}
+        for host in existing_elastic_workers:
+            if host in current_valid_elastic_worker_privateIps:
+                new_worker_set.append(host)
+                current_valid_elastic_worker_privateIps.pop(host)
+                logging.debug("Added host:{} to new worker host".format(host))
+            else:
+                logging.info("Adding host:{} to hosts_to_remove".format(host))
+                hosts_to_remove.add(host)
+
+        for host in current_valid_elastic_worker_privateIps:
+            new_worker_set.append(host)
+            logging.info("Added host:{} to new worker host".format(host))
+            new_instance_add_queue[host] = current_valid_elastic_worker_privateIps[host]
+
+        #write this new_worker_set to worker_host_file
+        with open(worker_host_file + ".tmp", 'w') as whf:
+            for host in new_worker_set:
+                host = host.strip()
+                whf.write(host + "\n")
+                logging.debug("Wrote host:{} to temp host file".format(host))
+            logging.debug("Will rename temp host file to :{}".format(worker_host_file))
+            os.rename(worker_host_file + ".tmp", worker_host_file)
+
+        for host, instanceId in removed_instances_tag_req.items():
+            if host in hosts_to_remove:
+                ec2.create_tags(Resources=[instanceId], Tags=[{'Key':elastic_worker_status_tag_key, 'Value':elastic_worker_status_removing_tag_value}])
+                logging.info("Created removing tags for host:{} instanceId:{}".format(host, instanceId))
+        for host, instanceId in new_instance_add_queue.items():
+            ec2.create_tags(Resources=[instanceId], Tags=[{'Key':elastic_worker_status_tag_key, 'Value':elastic_worker_status_adding_tag_value}])
+            logging.info("Created adding tags for host:{} instanceId:{}".format(host, instanceId))
+
+        logging.debug("Manage ET instance thread sleeping for 5 seconds")
+        time.sleep(5)
+
 def main():
     parser = argparse.ArgumentParser(description='Launch a distributed job')
     parser.add_argument('-n', '--num-workers', required=True, type=int,
@@ -117,37 +254,32 @@ def main():
                         help = ' if this option is set to true, elastic training is enabled. \
                         If True, you should specify which instance pool to use by using option \
                         --instance-pool')
-    parser.add_argument('--instance-pool', type=str, default='DEFAULT', help=' You can use '
-                        ' [reservedInstancePoolId | \'spotInstance\', | \'DEFAULT\']' \
-                        'In case of DEFAULT a file will be created in same folder ' 
-                        ' where --hostfile lives. The default worker filename will be \'default_worker_file\'')
-    parser.add_argument('--max-elastic-instances', type=int, default=0,help = ' if instance pool is reserved' \
-                        ' or spotInstance, up to max-elastic-instances can be added to existing cluster')
     parser.add_argument('--launch-worker', type=bool, default=False, help = 'whether this script should' \
                         'only launch worker instances')    
     parser.add_argument('--host', type=str, help='host name or ip of new worker host to launch')
     parser.add_argument('--port', type=str, default='22', help='port number of new worker for ssh command to run by')           
     parser.add_argument('command', nargs='+',
                         help = 'command for launching the program')
-    # TODO verify if elastic training enabled is true
-    # verify that --instance-pool is defined , 
-    # if --instance-pool is [reserved|spot], verify that --max-elastic-instances is defined
-    # if --instance-pool is DEFAULT then , max_elastic_instance is not defined
-    # launch-worker is true, verify we have host
 
     args, unknown = parser.parse_known_args()
-  #  if args.hostfile is not None: 
 
     args.command += unknown
     
-    logging.info("BEGING %s", args)
+    logging.info("BEGIN args %s", args)
 
     if args.num_servers is None:
         args.num_servers = args.num_workers
 
     args = dmlc_opts(args)
     
-    logging.info("JAHHAHA%s", args)
+    logging.info("args after dmlc_opts %s", args)
+
+    if os.getenv('WORKER_LAUNCH_TEMPLATE_ID') is not None and os.getenv('ELASTIC_WORKER_TAG') is not None:
+        logging.info("Found launch template id and elastic worker tag in environment variable. Will start ET Management thread")
+        thread = Thread(target = manage_elastic_instance, args=(args.worker_host_file, args.num_workers))
+        thread.setDaemon(True)
+        thread.start()
+
     if args.host_file is None or args.host_file == 'None':
       if args.cluster == 'yarn':
           from dmlc_tracker import yarn
@@ -160,14 +292,14 @@ def main():
           sge.submit(args)
       elif args.cluster == 'ssh' and args.launch_worker is True:
           from dmlc_tracker import ssh
-          logging.info("Vikas dmlc_tracker ssh %s", args)
+          logging.info("dmlc_tracker ssh %s", args)
           ssh.submit(args)
       else:
           raise RuntimeError('Unknown submission cluster type %s' % args.cluster)
     else:
       if args.cluster == 'ssh':
           from dmlc_tracker import ssh
-          logging.info("Vikas dmlc_tracker ssh %s", args)
+          logging.info("dmlc_tracker ssh %s", args)
           ssh.submit(args)
       elif args.cluster == 'mpi':
           from dmlc_tracker import mpi
