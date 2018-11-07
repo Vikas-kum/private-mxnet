@@ -62,11 +62,8 @@ def dmlc_opts(opts):
         args.append('--mxnet-launch-script-path')
         args.append(os.path.abspath(__file__))
         args.append('--worker-host-file')
-        args.append(dopts['hostfile'] + "_worker")
-        args.append('--instance-pool')
-        args.append(dopts['instance_pool'])
-        args.append('--max-elastic-instances')
-        args.append(str(dopts['max_elastic_instances']))
+        dirname = os.path.dirname(os.path.abspath(__file__))
+        args.append(dirname + "_worker")
 
     if dopts['launch_worker'] is True:    
         #args.append('--launch-worker ' + True)
@@ -100,6 +97,10 @@ def manage_elastic_instance(worker_host_file, fixed_num_worker):
         existing_elastic_workers = set()
         count = 0
         new_worker_set = []
+        if not os.path.exists(worker_host_file):
+            logging.info("Worker host file:{} doesn't exist yet. Sleeping for 5 sec".format(worker_host_file))
+            time.sleep(5)
+            continue
         with open(worker_host_file) as whf:
             for host_ip in whf:
                 host_ip = host_ip.strip()
@@ -114,6 +115,8 @@ def manage_elastic_instance(worker_host_file, fixed_num_worker):
         region = os.getenv('AWS_REGION')
         launch_template_id = os.getenv('WORKER_LAUNCH_TEMPLATE_ID')
         elastic_tag = os.getenv('ELASTIC_WORKER_TAG')
+
+        efs_mount = os.getenv('EFS_MOUNT')
         elastic_worker_status_tag_key = 'elastic_worker_status'
         elastic_worker_status_removing_tag_value = 'REMOVAL_QUEUED'
 
@@ -134,21 +137,36 @@ def manage_elastic_instance(worker_host_file, fixed_num_worker):
                 should_add_remove_tag = True
                 tags = instance['Tags']
                 privateIp = instance['PrivateIpAddress']
+                has_elastic_tag = False
+                has_elastic_status = False
                 for kv in tags:
                     if kv['Key'] == elastic_tag:
-                        current_valid_elastic_worker_privateIps[privateIp] = instance['InstanceId']
-                        logging.info("Adding privateip:{} to current_valid_elastic_worker".format(instance['PrivateIpAddress']))
+                        has_elastic_tag = True
                     # get all the instances previously queued for removal
+                    if kv['Key'] ==  elastic_worker_status_tag_key:
+                        has_elastic_status = True
                     if kv['Key'] ==  elastic_worker_status_tag_key and elastic_worker_status_removing_tag_value == kv['Value']:
                         remove_instances_queue[privateIp] = instance['InstanceId']
                         logging.info("Got removing tag for host:{} indtanceId:{}".format(instance['PrivateIpAddress'], instance['InstanceId']))
                         should_add_remove_tag = False
+
                     elif kv['Key'] ==  elastic_worker_status_tag_key and elastic_worker_status_adding_tag_value == kv['Value']:
                         add_instances_queue[privateIp] = instance['InstanceId']
                         logging.info("Got adding tag for host:{} indtanceId:{}".format(instance['PrivateIpAddress'], instance['InstanceId']))
 
+                if has_elastic_tag == True and has_elastic_status == False:
+                    prepare_data_success_file_path = efs_mount + "/prepare_data_success_" + privateIp
+                    # look for prepare data success file
+                    if os.path.exists(prepare_data_success_file_path):
+                        current_valid_elastic_worker_privateIps[privateIp] = instance['InstanceId']
+                        logging.info("Found prepare data success file:{}. Adding privateip:{} to current_valid_elastic_worker".format(prepare_data_success_file_path, instance['PrivateIpAddress']))
+                    else:
+                        logging.info("Prepare data success file {} not found yet.".format(prepare_data_success_file_path)) 
+                elif has_elastic_tag == True:
+                    current_valid_elastic_worker_privateIps[privateIp] = instance['InstanceId']
+                    logging.info("Adding privateip:{} to current_valid_elastic_worker".format(instance['PrivateIpAddress']))
                 # this instance need to be queued for removal now
-                if privateIp not in current_valid_elastic_worker_privateIps and should_add_remove_tag == True:
+                if has_elastic_tag == False and should_add_remove_tag == True:
                     removed_instances_tag_req[instance['PrivateIpAddress']] = instance['InstanceId']
                     logging.info("Will add remove tag for host:{} indtanceId:{}".format(instance['PrivateIpAddress'], instance['InstanceId']))
 
@@ -274,7 +292,7 @@ def main():
     
     logging.info("args after dmlc_opts %s", args)
 
-    if os.getenv('WORKER_LAUNCH_TEMPLATE_ID') is not None and os.getenv('ELASTIC_WORKER_TAG') is not None:
+    if os.getenv('WORKER_LAUNCH_TEMPLATE_ID') is not None and os.getenv('ELASTIC_WORKER_TAG') is not None and args.launch_worker is False :
         logging.info("Found launch template id and elastic worker tag in environment variable. Will start ET Management thread")
         thread = Thread(target = manage_elastic_instance, args=(args.worker_host_file, args.num_workers))
         thread.setDaemon(True)
