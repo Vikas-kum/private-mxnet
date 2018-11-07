@@ -176,7 +176,7 @@ def _store_aux_params_on_kvstore(aux_arrays, kvstore, aux_names, aux_params, is_
         if(not is_initialized):
             kvstore.init(name, aux_params[name], True)
 
-        kvstore.push(name, aux_val, priority=-index)
+        kvstore.push(name, aux_params[name], priority=-index)
 
 def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, param_names, aux_arrays=None, aux_names=None):
     idx = 0
