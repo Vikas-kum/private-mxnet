@@ -4,11 +4,11 @@
 [submodule "3rdparty/dmlc-core"]
 	path = 3rdparty/dmlc-core
 	#url = https://github.com/Vikas89/private-dmlc-core.git
-	url = https://github.com/dmlc-core.git
+	url = git@github.com:Vikas89/dmlc-core.git
 [submodule "3rdparty/ps-lite"]
 	path = 3rdparty/ps-lite
 	#url = https://github.com/Vikas89/private-ps-lite.git
-	url = https://github.com/ps-lite.git
+	url = git@github.com:Vikas89/ps-lite.git
 [submodule "3rdparty/dlpack"]
 	path = 3rdparty/dlpack
 	url = https://github.com/dmlc/dlpack
@@ -28,6 +28,6 @@
 [submodule "3rdparty/tvm"]
 	path = 3rdparty/tvm
 	url = https://github.com/dmlc/tvm
-[submodule "3rdparty/onnx-tensorrt"]
-	path = 3rdparty/onnx-tensorrt
-	url = https://github.com/onnx/onnx-tensorrt.git
+#[submodule "3rdparty/onnx-tensorrt"]
+#	path = 3rdparty/onnx-tensorrt
+#	url = https://github.com/onnx/onnx-tensorrt.git
