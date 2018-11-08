@@ -63,7 +63,7 @@ def dmlc_opts(opts):
         args.append(os.path.abspath(__file__))
         args.append('--worker-host-file')
         dirname = os.path.dirname(os.path.abspath(__file__))
-        args.append(dirname + "_worker")
+        args.append(dirname + "/host_worker")
 
     if dopts['launch_worker'] is True:    
         #args.append('--launch-worker ' + True)

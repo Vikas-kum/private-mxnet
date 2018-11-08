@@ -520,8 +520,8 @@ class BaseModule(object):
 
         if is_new_worker == True:
             dup_arg_params, dup_aux_params = self.get_params()
-            self.logger.info("New worker Pid:{} , new_arg_params :{}".format(os.getpid(), dup_arg_params))
-            self.logger.info("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_aux_params))
+            self.logger.debug("New worker Pid:{} , new_arg_params :{}".format(os.getpid(), dup_arg_params))
+            self.logger.debug("New worker Pid:{} , new_aux_params :{}".format(os.getpid(), dup_aux_params))
 
 
         ################################################################################
@@ -600,8 +600,8 @@ class BaseModule(object):
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
             self.set_params(arg_params, aux_params)
-            self.logger.info("Pid:{} my_rank:{} arg_params:{}".format(os.getpid(), kvstore.rank, arg_params))
-            self.logger.info("Pid:{} my_rank:{} aux_params:{}".format(os.getpid(), kvstore.rank, aux_params))
+            self.logger.debug("Pid:{} my_rank:{} arg_params:{}".format(os.getpid(), kvstore.rank, arg_params))
+            self.logger.debug("Pid:{} my_rank:{} aux_params:{}".format(os.getpid(), kvstore.rank, aux_params))
             if is_elastic_training_enabled:
                 self.logger.info('Storing aux params in KVStore')
                 self.store_aux_params()
