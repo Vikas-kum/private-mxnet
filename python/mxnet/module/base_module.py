@@ -600,8 +600,6 @@ class BaseModule(object):
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
             self.set_params(arg_params, aux_params)
-            self.logger.debug("Pid:{} my_rank:{} arg_params:{}".format(os.getpid(), kvstore.rank, arg_params))
-            self.logger.debug("Pid:{} my_rank:{} aux_params:{}".format(os.getpid(), kvstore.rank, aux_params))
             if is_elastic_training_enabled:
                 self.logger.info('Storing aux params in KVStore')
                 self.store_aux_params()
